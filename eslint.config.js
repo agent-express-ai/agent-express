@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint"
 
 export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "packages/", "*.config.*"] },
+  { ignores: ["dist/", "node_modules/", "packages/", "*.config.*", "tests/"] },
   ...tseslint.configs.recommendedTypeChecked,
   {
     files: ["src/**/*.ts"],
@@ -23,14 +23,6 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-call": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
       "@typescript-eslint/no-unsafe-return": "off",
-    },
-  },
-  {
-    files: ["tests/**/*.ts"],
-    ...tseslint.configs.disableTypeChecked,
-    rules: {
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 )
