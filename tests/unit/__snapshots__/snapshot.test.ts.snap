@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`toMatchAgentSnapshot > creates and matches a snapshot 1`] = `
+{
+  "state": {
+    "counter": 42,
+    "observe:usage": {
+      "inputTokens": 10,
+      "outputTokens": 5,
+    },
+  },
+  "text": "Hello, world!",
+}
+`;
+
+exports[`toMatchAgentSnapshot > with exclude omits specified state keys 1`] = `
+{
+  "state": {
+    "counter": 1,
+    "observe:usage": {
+      "inputTokens": 10,
+      "outputTokens": 5,
+    },
+  },
+  "text": "Stable output",
+}
+`;

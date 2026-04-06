@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+.env*
+.DS_Store
+*.tmp
+*.swp
+.vscode/
+.idea/
+coverage/
+
+docs/
+specs/
+.specify/
+.claude/

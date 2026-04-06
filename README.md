@@ -1,0 +1,116 @@
+# agent-express
+
+Minimalist middleware framework for building AI agents in TypeScript.
+
+[![npm version](https://img.shields.io/npm/v/agent-express)](https://www.npmjs.com/package/agent-express)
+[![CI](https://img.shields.io/github/actions/workflow/status/agent-express-ai/agent-express/ci.yml?branch=main)](https://github.com/agent-express-ai/agent-express/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
+
+## Why agent-express
+
+Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framework.
+
+Every backend developer knows `use()`. Agent Express applies the Express.js middleware pattern to AI agents. One `(ctx, next)` interface replaces the 15-20 concepts you'll find in alternatives. If you've built an Express app, you already know the mental model.
+
+## Quick Start
+
+```bash
+npm install agent-express
+```
+
+```typescript
+import { Agent, tools } from "agent-express"
+import { z } from "zod"
+
+const agent = new Agent({
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+agent.use(tools.function({
+  name: "greet",
+  description: "Greet someone by name",
+  schema: z.object({ name: z.string() }),
+  execute: async ({ name }) => `Hello, ${name}!`,
+}))
+
+const { text } = await agent.run({ input: "Greet Alice" })
+console.log(text)
+```
+
+## Features
+
+- **Middleware architecture** -- 5 onion hooks (`agent`, `session`, `turn`, `model`, `tool`), one `(ctx, next)` pattern
+- **Built-in guards** -- budget caps, input/output validation, timeouts, iteration limits, HITL approval
+- **Observability** -- token usage tracking, tool call recording, turn duration, structured JSON logging
+- **Model routing** -- complexity-based model selection across providers
+- **Memory management** -- context window compaction with 5 strategies
+- **Testing toolkit** -- TestModel, FunctionModel, capture, record/replay, snapshots
+- **MCP integration** -- connect to MCP servers as tool sources
+- **HTTP adapter** -- SSE streaming out of the box
+- **CLI** -- `agent-express dev` with hot reload, `agent-express test` with CI output
+- **Structured output** -- Zod schema validation on model responses
+
+## Middleware Namespaces
+
+Compose capabilities by stacking middleware:
+
+```typescript
+import { Agent, guard, observe, model, memory, dev } from "agent-express"
+
+const agent = new Agent({ model: "anthropic/claude-sonnet-4-6" })
+
+agent
+  .use(guard.budget({ limit: 1.00 }))
+  .use(guard.approve({ approve: myApprovalFn }))
+  .use(observe.usage())
+  .use(model.retry())
+  .use(memory.compaction({ maxTokens: 8192 }))
+  .use(dev.console())
+```
+
+| Namespace | Middleware | Description |
+|---|---|---|
+| `guard` | `budget`, `input`, `output`, `maxIterations`, `timeout`, `approve` | Safety and cost controls |
+| `observe` | `usage`, `tools`, `duration`, `log` | Monitoring and telemetry |
+| `model` | `retry`, `router` | LLM call management |
+| `memory` | `compaction` | Context window management |
+| `tools` | `function`, `mcp` | Tool registration |
+| `dev` | `console` | Development utilities |
+
+## Comparison
+
+| Feature | agent-express | Mastra | Vercel AI SDK | LangChain.js |
+|---|---|---|---|---|
+| Core concepts | 3 | 15-20 | 5-8 | 30+ |
+| Extension model | Middleware `(ctx, next)` | Processors, Tools, Workflows | Hooks, Providers | Chains, Agents, Tools, Memory |
+| Built-in testing | Yes | No | No | No |
+| Cost control | `guard.budget()` | Manual | Manual | Manual |
+| TypeScript | Strict, ESM only | TypeScript | TypeScript | TypeScript |
+
+## Package Entry Points
+
+```
+agent-express       -- Agent, Session, middleware namespaces, errors
+agent-express/http  -- createHandler() SSE adapter
+agent-express/test  -- TestModel, FunctionModel, testAgent()
+```
+
+## CLI
+
+```bash
+npx create-agent-express "build a support bot"     # AI-powered scaffold
+npx create-agent-express --template support-bot     # static template (offline)
+npx agent-express dev [entry]                       # terminal chat + hot reload
+npx agent-express test                              # agent test runner
+npx agent-express test --ci                         # JUnit XML output for CI
+```
+
+## Links
+
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [License](LICENSE)

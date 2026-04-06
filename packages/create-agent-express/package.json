@@ -1,0 +1,50 @@
+{
+  "name": "create-agent-express",
+  "version": "0.1.0",
+  "description": "Create agent-express projects — AI-powered scaffolder that is itself an agent-express agent",
+  "type": "module",
+  "bin": {
+    "create-agent-express": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "commander": "^13.0.0",
+    "open": "^10.0.0"
+  },
+  "peerDependencies": {
+    "agent-express": ">=0.1.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.5.0"
+  },
+  "files": [
+    "dist/",
+    "templates/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agent-express-ai/agent-express.git",
+    "directory": "packages/create-agent-express"
+  },
+  "homepage": "https://github.com/agent-express-ai/agent-express/tree/main/packages/create-agent-express",
+  "keywords": [
+    "create",
+    "agent-express",
+    "scaffold",
+    "ai",
+    "agent",
+    "typescript"
+  ],
+  "author": "agent-express contributors",
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,16 @@
+// Test utilities for agent-express
+// Import from "agent-express/test"
+
+export { TestModel } from "./test-model.js"
+export type { TestModelOptions } from "./test-model.js"
+export { FunctionModel } from "./function-model.js"
+export type { FunctionModelHandler, FunctionModelToolDef } from "./function-model.js"
+export { ALLOW_REAL_REQUESTS, setAllowRealRequests } from "./allow-real-requests.js"
+export { testAgent, testSession } from "./test-agent.js"
+export type { TestOptions, TestResult, TestSessionResult } from "./test-agent.js"
+export { capture } from "./capture.js"
+export type { CaptureResult, TurnCapture } from "./capture.js"
+export { RecordModel, ReplayModel } from "./recorder.js"
+export type { Cassette, CassetteInteraction, CassetteToolDef } from "./recorder.js"
+export { toMatchAgentSnapshot, serializeForSnapshot } from "./snapshot.js"
+export type { SnapshotOptions } from "./snapshot.js"

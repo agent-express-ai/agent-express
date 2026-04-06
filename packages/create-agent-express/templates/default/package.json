@@ -1,0 +1,17 @@
+{
+  "name": "my-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "agent-express dev",
+    "test": "agent-express test"
+  },
+  "dependencies": {
+    "agent-express": "latest",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
