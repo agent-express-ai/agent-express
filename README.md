@@ -79,6 +79,113 @@ agent
 | `tools` | `function`, `mcp` | Tool registration |
 | `dev` | `console` | Development utilities |
 
+## Writing Custom Middleware
+
+A plain function passed to `.use()` becomes a `turn` hook:
+
+```typescript
+agent.use(async (ctx, next) => {
+  console.log(`Turn ${ctx.turnIndex}: ${ctx.input[0]?.content}`)
+  await next()
+  console.log(`Response: ${ctx.output}`)
+})
+```
+
+For multiple hooks, return a `Middleware` object:
+
+```typescript
+import type { Middleware } from "agent-express"
+
+const analytics: Middleware = {
+  name: "analytics",
+  state: {
+    "analytics:turns": { default: 0 },
+    "analytics:cost": { default: 0, reducer: (prev, delta) => prev + delta },
+  },
+  turn: async (ctx, next) => {
+    ctx.state["analytics:turns"] = ctx.turnIndex + 1
+    await next()
+  },
+  model: async (ctx, next) => {
+    const response = await next()
+    ctx.state["analytics:cost"] = response.usage.inputTokens * 0.000003
+    return response
+  },
+}
+
+agent.use(analytics)
+```
+
+The 5 hooks form an onion — code before `next()` runs on the way in, code after runs on the way out:
+
+```
+agent → session → turn → model → [LLM call]
+                       → tool  → [tool execution]
+```
+
+See built-in middleware for real-world examples:
+[guard.budget](src/middleware/guard/budget.ts),
+[observe.usage](src/middleware/observe/usage.ts),
+[model.retry](src/middleware/model/retry.ts),
+[memory.compaction](src/middleware/memory/compaction.ts)
+
+## Sessions and Streaming
+
+Multi-turn conversations with session state:
+
+```typescript
+await agent.init()
+const session = agent.session()
+
+const r1 = await session.run({ input: "My name is Alice" })
+const r2 = await session.run({ input: "What's my name?" })
+// r2.text → "Your name is Alice"
+
+await agent.dispose()
+```
+
+Streaming events as they happen:
+
+```typescript
+for await (const event of agent.run({ input: "Hello" })) {
+  if (event.type === "model:chunk") process.stdout.write(event.text)
+  if (event.type === "tool:start") console.log(`Calling ${event.tool}...`)
+}
+```
+
+## Testing
+
+Mock LLM calls in tests with `agent-express/test`:
+
+```typescript
+import { TestModel, testAgent } from "agent-express/test"
+
+const model = new TestModel([
+  { text: "Hello! How can I help?" },
+])
+
+const result = await testAgent(agent, {
+  model,
+  input: "Hi",
+})
+expect(result.text).toContain("Hello")
+```
+
+Record and replay real API calls:
+
+```typescript
+import { RecordModel, ReplayModel } from "agent-express/test"
+
+// Record once (hits real API)
+const record = new RecordModel("anthropic/claude-sonnet-4-6")
+await agent.run({ input: "test", model: record })
+record.save("tests/cassettes/greeting.json")
+
+// Replay forever (no API calls)
+const replay = ReplayModel.load("tests/cassettes/greeting.json")
+await agent.run({ input: "test", model: replay })
+```
+
 ## Comparison
 
 | Feature | agent-express | Mastra | Vercel AI SDK | LangChain.js |
