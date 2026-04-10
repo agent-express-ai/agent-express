@@ -11,6 +11,7 @@ export default defineConfig({
       title: "agent-express",
       description:
         "Minimalist middleware framework for building AI agents in TypeScript",
+      favicon: "/favicon.ico",
       disable404Route: true,
       routeMiddleware: "./src/routeData.ts",
       components: {
