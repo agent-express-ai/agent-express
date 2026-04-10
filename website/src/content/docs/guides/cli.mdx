@@ -1,0 +1,200 @@
+---
+title: CLI
+description: "create-agent-express scaffolding, dev mode, and test runner."
+---
+
+Agent Express includes two CLI tools: `create-agent-express` for project scaffolding, and `agent-express` for development and testing.
+
+## create-agent-express
+
+Scaffold a new Agent Express project from a description or template.
+
+### AI-Powered Scaffold
+
+Describe what you want in natural language. The scaffolder is itself an Agent Express agent (dogfooding).
+
+```bash
+npx create-agent-express "a customer support bot that can look up orders and process refunds"
+```
+
+This requires an API key. If `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) is not set, the CLI opens the provider's key page and prompts you to paste one.
+
+### Template Scaffold
+
+Use a pre-built template for offline scaffolding (no API key needed):
+
+```bash
+npx create-agent-express --template support-bot
+```
+
+**Available templates:**
+
+| Template | Description |
+|----------|-------------|
+| `default` | Minimal agent starter |
+| `coding` | Coding assistant |
+| `research` | Research agent |
+| `support-bot` | Support bot with tools |
+
+### Zero-Prompt Mode
+
+Create the default template with no interactive prompts:
+
+```bash
+npx create-agent-express --default
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `[description]` | Natural language description (triggers AI mode) |
+| `--template <name>` | Use a static template |
+| `--default` | Default template, zero prompts |
+| `--name <name>` | Project name. Default: `my-agent` |
+| `--provider <provider>` | LLM provider: `anthropic` or `openai`. Default: `anthropic` |
+| `--model <model>` | Model name. Default: `claude-sonnet-4-6` |
+
+### What Gets Created
+
+After scaffolding, you get a ready-to-run project:
+
+```
+my-agent/
+├── src/
+│   └── agent.ts       # Your agent definition
+├── package.json
+├── tsconfig.json
+└── .env               # API key placeholder
+```
+
+Next steps printed by the CLI:
+
+```bash
+cd my-agent
+npm install
+npm run dev     # chat with your agent
+npm test        # run agent tests (no API key needed)
+```
+
+## agent-express dev
+
+Interactive terminal chat with hot reload. Loads an agent from a file and starts a readline REPL.
+
+```bash
+npx agent-express dev ./src/agent.ts
+```
+
+### Features
+
+- **Interactive chat**: type messages, get responses
+- **Hot reload**: watches the source directory for `.ts`/`.js` file changes and automatically reloads the agent
+- **Session commands**:
+  - `/clear` -- reset the session (start a new conversation)
+  - `/history` -- print the conversation history
+  - `/quit` or `/exit` -- exit
+
+### Agent File Format
+
+The entry file must export an `Agent` instance as the default export or a named `agent` export:
+
+```typescript
+// src/agent.ts
+import { Agent } from "agent-express"
+
+const agent = new Agent({
+  name: "my-assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+export default agent
+```
+
+### Hot Reload
+
+When any `.ts` or `.js` file in the entry file's directory changes:
+
+1. The current session is closed
+2. The current agent is disposed
+3. The module is re-imported (cache-busted)
+4. A new agent is initialized with a fresh session
+
+This makes the development loop fast: edit code, save, and the next message uses the updated agent.
+
+### Debug Logging
+
+Add `dev.console()` middleware to see agent lifecycle events in the terminal during development:
+
+```typescript
+import { Agent, dev } from "agent-express"
+
+const agent = new Agent({
+  name: "my-assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+}).use(dev.console())
+
+export default agent
+```
+
+Example output when chatting with the agent:
+
+```
+┌ session s-a1b2c3
+│  → turn #0
+│  │  → model.call  anthropic/claude-sonnet-4-6  tokens:127→45  312ms
+│  → turn #0 done  315ms
+└ session done  318ms
+```
+
+With tool calls the tree shows more detail:
+
+```
+┌ session s-d4e5f6
+│  → turn #0
+│  │  → model.call  anthropic/claude-sonnet-4-6  tokens:150→85  847ms  tools:1
+│  │  → tool.exec   get_weather  234ms
+│  │  → model.call  anthropic/claude-sonnet-4-6  tokens:320→120  612ms
+│  → turn #0 done  1693ms
+└ session done  1696ms
+```
+
+## agent-express test
+
+Run agent tests with automatic API call blocking. Wraps Vitest with agent-specific configuration.
+
+```bash
+# Run all agent tests
+npx agent-express test
+
+# JUnit XML output for CI pipelines
+npx agent-express test --ci
+
+# Custom file pattern
+npx agent-express test --pattern "**/*.test.ts"
+```
+
+### What It Does
+
+1. Sets `ALLOW_REAL_REQUESTS=false` -- blocks real API calls so tests never hit live endpoints
+2. Discovers test files matching the pattern (default: `**/*.agent.test.ts`)
+3. Runs tests via Vitest with `globals: true`
+4. Reports results to the terminal
+
+### CI Mode
+
+The `--ci` flag adds JUnit XML output for CI systems:
+
+```bash
+npx agent-express test --ci
+```
+
+This generates `./test-results/junit.xml`, compatible with GitHub Actions, CircleCI, Jenkins, and other CI platforms.
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--ci` | Output JUnit XML to `./test-results/junit.xml` |
+| `--pattern <glob>` | Test file pattern. Default: `**/*.agent.test.ts` |

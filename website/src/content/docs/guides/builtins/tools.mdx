@@ -1,0 +1,120 @@
+---
+title: Tools & MCP
+description: "Tool middleware: TypeScript function tools with Zod schemas, MCP server connection."
+---
+
+Tool registration middleware. Define TypeScript function tools with Zod schema validation, or connect to MCP servers for external tool discovery.
+
+## tools.function()
+
+Creates function tools with Zod schemas for input validation and JSON Schema generation.
+
+```typescript
+function toolsFunction(defs: ToolDef | ToolDef[]): Middleware
+```
+
+```typescript
+import { tools } from "agent-express"
+import { z } from "zod"
+
+agent.use(tools.function({
+  name: "get_weather",
+  description: "Get current weather for a city",
+  schema: z.object({
+    city: z.string().describe("City name"),
+    units: z.enum(["celsius", "fahrenheit"]).optional(),
+  }),
+  execute: async ({ city, units }) => {
+    const data = await fetchWeather(city, units)
+    return `${data.temp} degrees in ${city}`
+  },
+}))
+```
+
+Accepts a single `ToolDef` or an array:
+
+```typescript
+agent.use(tools.function([weatherTool, searchTool, calculatorTool]))
+```
+
+**Hooks:** `agent` -- registers tools via `ctx.registerTool()` before `next()`.
+
+**ToolDef options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `string` | *required* | Tool name sent to the LLM |
+| `description` | `string` | *required* | Description for the LLM |
+| `schema` | `ZodSchema` | *required* | Zod schema for input validation and JSON Schema generation |
+| `execute` | `(args, ctx) => Promise<unknown>` | *required* | Execution function |
+| `timeout` | `number` | `30000` | Max execution time in ms |
+| `requireApproval` | `boolean \| (args) => boolean \| Promise<boolean>` | `undefined` | Whether to require HITL approval |
+
+---
+
+## tools.mcp()
+
+Connects to an MCP (Model Context Protocol) server, discovers its tools, and registers them on the agent. Requires `@modelcontextprotocol/sdk` as a peer dependency.
+
+```typescript
+function mcpTools(config: McpServerConfig): Middleware
+```
+
+```typescript
+// Local process via stdio
+agent.use(tools.mcp({
+  name: "crm",
+  transport: "stdio",
+  command: "npx",
+  args: ["-y", "@acme/crm-mcp"],
+}))
+
+// Remote server via HTTP
+agent.use(tools.mcp({
+  name: "docs",
+  transport: "http",
+  url: "https://mcp.example.com",
+  headers: { Authorization: "Bearer token" },
+}))
+
+// SSE transport
+agent.use(tools.mcp({
+  name: "search",
+  transport: "sse",
+  url: "https://sse.example.com/mcp",
+}))
+```
+
+One server per `.use()` call. For multiple servers, call `.use()` multiple times.
+
+**Common options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `string` | *required* | Server identifier for debugging and tool name disambiguation |
+| `requireApproval` | `boolean \| string[] \| (toolName, args) => boolean \| Promise<boolean>` | `undefined` | Which tools require human approval. `string[]` supports glob patterns (e.g., `"delete_*"`). |
+
+**Transport options** (discriminated union on the `transport` field):
+
+| Transport | Options |
+|-----------|---------|
+| `stdio` | `command`, `args?`, `env?` |
+| `http` | `url`, `headers?`, `timeout?` |
+| `sse` | `url`, `headers?`, `timeout?` |
+
+**Hooks:** `agent` -- connects on init, discovers and registers tools, disconnects on dispose.
+
+**Approval for MCP tools:**
+
+```typescript
+agent.use(tools.mcp({
+  name: "crm",
+  transport: "stdio",
+  command: "npx",
+  args: ["-y", "@acme/crm-mcp"],
+  requireApproval: true, // all tools
+  // or: requireApproval: ["delete_*", "drop_*"]  // glob patterns
+  // or: requireApproval: (toolName, args) => toolName.startsWith("delete")
+}))
+```
+
+The MCP client connects during `agent.init()` and disconnects during `agent.dispose()`.

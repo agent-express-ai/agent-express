@@ -1,0 +1,129 @@
+---
+title: Getting Started
+description: Install Agent Express and build your first AI agent in 5 minutes.
+sidebar:
+  order: 1
+---
+
+Build your first AI agent in under 5 minutes. Agent Express is a minimalist middleware framework for AI agents in TypeScript — three concepts: **Agent**, **Session**, and **Middleware**.
+
+:::caution
+Agent Express is at v0.1.0. The API may change before 1.0.
+:::
+
+## Prerequisites
+
+- **Node.js 20+** (ESM only)
+- **npm** (or pnpm / yarn)
+- An **API key** from [Anthropic](https://console.anthropic.com/) or [OpenAI](https://platform.openai.com/)
+
+## Installation
+
+Install Agent Express and the provider SDK for your model:
+
+```bash
+# Anthropic (Claude)
+npm install agent-express @ai-sdk/anthropic
+
+# OpenAI (GPT)
+npm install agent-express @ai-sdk/openai
+```
+
+Set your API key as an environment variable:
+
+```bash
+# Anthropic
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+```
+
+## Your First Agent
+
+Create a file called `agent.ts`:
+
+```typescript
+import { Agent } from "agent-express"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+const { text } = await agent.run("What is the capital of France?").result
+console.log(text)
+```
+
+Run it with `npx tsx agent.ts`. That's a working agent.
+
+The model string uses the `"provider/model-name"` format. For OpenAI, use `"openai/gpt-4o"`.
+
+Behind the scenes, `agent.run()` auto-initializes the agent, creates a single-turn session, and returns the result. [Default middleware](/guides/builtins/) (retry, usage tracking, iteration limits) is applied automatically.
+
+## Adding Middleware
+
+Agent Express uses an Express.js-style `(ctx, next)` middleware pattern. Built-in middleware is organized into namespaces: [`observe`](/guides/builtins/observe/), [`guard`](/guides/builtins/guard/), [`model`](/guides/builtins/model/), [`memory`](/guides/builtins/memory/), [`tools`](/guides/builtins/tools/), and [`dev`](/guides/builtins/dev/).
+
+Add observability and a cost guard to the agent:
+
+```typescript
+import { Agent, observe, guard } from "agent-express"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+agent.use(observe.usage())            // token tracking
+agent.use(guard.budget({ limit: 1 })) // $1 USD cost cap per session
+
+const { text, state } = await agent.run("Explain quantum computing briefly.").result
+
+console.log(text)
+console.log(state["observe:usage"])  // { inputTokens: ..., outputTokens: ... }
+```
+
+Middleware composes in registration order. Each hook wraps the next in an onion — the first registered runs outermost.
+
+## Using the Scaffold
+
+The fastest way to start a new project is with `create-agent-express`:
+
+```bash
+npx create-agent-express "research agent that summarizes papers"
+```
+
+This uses an AI-powered scaffold to generate a project tailored to your description. For offline use, pick from four built-in templates:
+
+```bash
+npx create-agent-express --template default      # minimal starter
+npx create-agent-express --template coding        # coding assistant
+npx create-agent-express --template research      # research agent
+npx create-agent-express --template support-bot   # support bot with tools
+```
+
+Or skip all prompts with the default template:
+
+```bash
+npx create-agent-express --default
+```
+
+## Dev Mode
+
+Agent Express includes an interactive terminal chat with hot reload:
+
+```bash
+npx agent-express dev agent.ts
+```
+
+This starts a REPL session against your agent. Edit the source file and the agent reloads automatically — no restart needed. Your agent file should export the Agent instance as `default` or named `agent`.
+
+## Next Steps
+
+- [**Concepts**](/concepts/) — understand Agent, Session, and Middleware in depth
+- [**Middleware guide**](/guides/middleware/) — write custom middleware with the `(ctx, next)` pattern
+- [**Built-in middleware**](/guides/builtins/) — all available middleware: guards, observers, tools, memory, routing
+- [**Testing**](/guides/testing/) — test agents without real API calls using `TestModel` and `FunctionModel`

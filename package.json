@@ -34,6 +34,7 @@
   "dependencies": {
     "@ai-sdk/provider": "^3.0.0",
     "commander": "^13.0.0",
+    "starlight-llms-txt": "^0.8.0",
     "zod": "^3.23.0"
   },
   "peerDependencies": {

@@ -1,0 +1,190 @@
+/* Prevent horizontal shift from scrollbar */
+html {
+  overflow-y: scroll;
+}
+
+/* Theme overrides — dark-mode-first, light mode supported */
+
+:root {
+  --sl-color-accent-low: #1a1a2e;
+  --sl-color-accent: #7c3aed;
+  --sl-color-accent-high: #c4b5fd;
+
+  --sl-font-system: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sl-font-system-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+
+  --sl-text-h1: var(--sl-text-3xl);
+  --sl-text-h2: var(--sl-text-2xl);
+  --sl-text-h3: var(--sl-text-lg);
+  --sl-text-h4: var(--sl-text-base);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  --sl-color-white: #f8fafc;
+  --sl-color-gray-1: #e2e8f0;
+  --sl-color-gray-2: #cbd5e1;
+  --sl-color-gray-3: #94a3b8;
+  --sl-color-gray-4: #475569;
+  --sl-color-gray-5: #334155;
+  --sl-color-gray-6: #1e293b;
+  --sl-color-black: #0f172a;
+  --sl-color-bg-nav: #111827;
+  --sl-color-bg-sidebar: #111827;
+  --sl-color-bg: #111827;
+  --sl-color-hairline-light: #1e293b;
+  --sl-color-hairline-shade: #0f172a;
+  --sl-color-text: #e2e8f0;
+  --sl-color-text-accent: #c4b5fd;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --sl-color-white: #1e293b;
+  --sl-color-gray-1: #334155;
+  --sl-color-gray-2: #475569;
+  --sl-color-gray-3: #64748b;
+  --sl-color-gray-4: #94a3b8;
+  --sl-color-gray-5: #e2e8f0;
+  --sl-color-gray-6: #f1f5f9;
+  --sl-color-black: #f8fafc;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-bg: #ffffff;
+  --sl-color-hairline-light: #e2e8f0;
+  --sl-color-hairline-shade: #f1f5f9;
+  --sl-color-text: #334155;
+  --sl-color-text-accent: #7c3aed;
+  --sl-color-accent-high: #5b21b6;
+  --sl-color-accent-low: #f5f3ff;
+}
+
+/* Nav bar */
+:root[data-theme="dark"] header.header {
+  background: rgba(17, 24, 39, 0.95) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #1e293b !important;
+}
+
+:root[data-theme="light"] header.header {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+header.header {
+  padding-inline: 1.5rem !important;
+}
+
+/* Logo — always readable */
+:root[data-theme="dark"] .site-logo span {
+  color: #f8fafc !important;
+}
+
+:root[data-theme="light"] .site-logo span {
+  color: #1e293b !important;
+}
+
+.site-logo {
+  opacity: 1 !important;
+}
+
+.site-logo img {
+  filter: none !important;
+}
+
+/* Sidebar */
+:root[data-theme="dark"] .sidebar-pane,
+:root[data-theme="dark"] nav.sidebar {
+  background: #111827 !important;
+}
+
+:root[data-theme="light"] .sidebar-pane,
+:root[data-theme="light"] nav.sidebar {
+  background: #ffffff !important;
+}
+
+/* Active sidebar item — text color accent instead of bg highlight */
+nav.sidebar a[aria-current="page"] {
+  background: transparent !important;
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] nav.sidebar a[aria-current="page"] {
+  color: #c4b5fd !important;
+}
+
+:root[data-theme="light"] nav.sidebar a[aria-current="page"] {
+  color: #7c3aed !important;
+}
+
+nav.sidebar a[aria-current="page"]::before {
+  display: none !important;
+}
+
+/* Clean code blocks */
+.expressive-code {
+  --ec-brdRad: 0.5rem;
+}
+
+/* Remove vertical divider lines between columns */
+.sidebar-pane {
+  border-right: none !important;
+}
+
+.right-sidebar {
+  border-left: none !important;
+}
+
+/* Remove decorative horizontal lines */
+.content-panel {
+  border-top: none !important;
+}
+
+/* Pagination: transparent bg, highlight on hover */
+.pagination-links a {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0.5rem;
+  transition: background 0.15s;
+}
+
+:root[data-theme="dark"] .pagination-links a:hover {
+  background: #1e293b !important;
+}
+
+:root[data-theme="light"] .pagination-links a:hover {
+  background: #f1f5f9 !important;
+}
+
+/* Footer: no top border */
+.site-footer {
+  border-top: none !important;
+}
+
+/* Aside/callout blocks */
+:root[data-theme="dark"] .starlight-aside {
+  background: rgba(30, 41, 59, 0.5) !important;
+  border-color: currentColor !important;
+}
+
+:root[data-theme="light"] .starlight-aside {
+  background: rgba(241, 245, 249, 0.8) !important;
+  border-color: currentColor !important;
+}
+
+:root[data-theme="dark"] .starlight-aside--caution {
+  color: #f5bb3d !important;
+}
+
+:root[data-theme="dark"] .starlight-aside--caution .starlight-aside__title,
+:root[data-theme="dark"] .starlight-aside--caution p {
+  color: #e2e8f0 !important;
+}
+
+/* Tighter sidebar */
+nav.sidebar ul {
+  gap: 0.125rem;
+}

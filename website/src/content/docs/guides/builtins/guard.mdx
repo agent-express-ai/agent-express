@@ -1,0 +1,222 @@
+---
+title: Guard
+description: "Safety middleware: budget, input/output validation, timeouts, iteration limits, tool approval."
+---
+
+Safety and cost control middleware. Protect agents from runaway costs, bad inputs, unauthorized tool use, and infinite loops.
+
+## guard.budget()
+
+Enforces a per-session USD cost limit by tracking accumulated cost across all model calls.
+
+```typescript
+function budgetGuard(config: BudgetConfig): Middleware
+```
+
+```typescript
+import { guard } from "agent-express"
+
+// Throws [BudgetExceededError](/guides/errors/) when limit is reached
+agent.use(guard.budget({ limit: 0.50 }))
+
+// Graceful stop: turn ends with empty text
+agent.use(guard.budget({ limit: 0.50, onLimit: "stop" }))
+
+// Custom handler
+agent.use(guard.budget({
+  limit: 1.00,
+  onLimit: (ctx, cost) => "Sorry, I've reached my budget limit.",
+}))
+```
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `limit` | `number` | *required* | Maximum USD cost per session |
+| `onLimit` | `"error" \| "stop" \| (ctx, cost) => string \| void` | `"error"` | Behavior when limit reached |
+| `pricing` | `Record<string, ModelPricing>` | built-in table | Per-model pricing override (USD per 1M tokens). Merged with defaults. |
+| `fallbackPricing` | `ModelPricing` | `undefined` | Fallback pricing for models not in the default or custom table |
+
+**Hooks:** `model` -- checks budget before `next()`, records cost after.
+
+**State keys:**
+- `guard:budget:totalCost` -- accumulated cost in USD (reducer: sum)
+- `guard:budget:calls` -- array of `CostRecord` objects (reducer: append)
+
+Each `CostRecord` contains: `{ model: string; inputTokens: number; outputTokens: number; cost: number }`.
+
+---
+
+## guard.input()
+
+Validates input before each LLM call. Runs in the `model` hook before `next()`.
+
+```typescript
+function inputGuard(validator: InputValidator): Middleware
+```
+
+```typescript
+agent.use(guard.input(async (ctx) => {
+  const hasInjection = ctx.messages.some(
+    m => typeof m.content === "string" && m.content.includes("ignore previous")
+  )
+  if (hasInjection) {
+    return { ok: false, reason: "Potential prompt injection" }
+  }
+  return { ok: true }
+}))
+```
+
+The validator receives a `ModelContext` and returns an `InputValidationResult`:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ok` | `boolean` | Whether the input passed validation. |
+| `reason` | `string?` | Reason for rejection (when `!ok`). |
+| `messages` | `Message[]?` | Modified messages to use instead of originals (when `ok` + messages provided). |
+
+If `ok` is `false`, throws [`InputGuardrailError`](/guides/errors/).
+
+---
+
+## guard.output()
+
+Validates each model response after the LLM call but before tool execution. Accepts a validator function (shorthand) or a config object (full control).
+
+```typescript
+function outputGuard(validatorOrConfig: OutputValidator | OutputGuardConfig): Middleware
+```
+
+```typescript
+// Shorthand: validator function
+agent.use(guard.output(async (response, ctx) => {
+  if (response.toolCalls?.some(tc => tc.toolName === "delete_all")) {
+    return { ok: false, reason: "Dangerous tool call blocked" }
+  }
+  return { ok: true }
+}))
+
+// Full config: throw on block
+agent.use(guard.output({
+  validate: myValidator,
+  onBlock: "error", // throws OutputGuardrailError
+}))
+```
+
+**Config options (object form):**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `validate` | `OutputValidator` | *required* | Validation function |
+| `onBlock` | `"replace" \| "error"` | `"replace"` | `"replace"`: strip tool calls, return reason as text. `"error"`: throw [`OutputGuardrailError`](/guides/errors/). |
+
+The validator returns an `OutputValidationResult`:
+- `{ ok: true }` -- pass through
+- `{ ok: false, reason: "..." }` -- block the response
+- `{ ok: true, output: "modified text" }` -- pass through with modified output text
+
+**Hooks:** `model` -- validates after `next()`.
+
+---
+
+## guard.maxIterations()
+
+Limits the number of model calls per turn. Prevents runaway agent loops.
+
+```typescript
+function guardMaxIterations(max?: number): Middleware
+```
+
+```typescript
+agent.use(guard.maxIterations())    // default: 25
+agent.use(guard.maxIterations(10))  // custom limit
+```
+
+When the limit is reached, tool calls are stripped from the response and the turn ends gracefully. No error is thrown.
+
+**Hooks:** `turn` (resets counter), `model` (increments and checks). Uses an internal closure-based counter keyed by `turnId`.
+
+---
+
+## guard.timeout()
+
+Enforces time limits on turns and individual model calls.
+
+```typescript
+function guardTimeout(config?: TimeoutConfig): Middleware
+```
+
+```typescript
+agent.use(guard.timeout())                                // defaults: turn 2min, model 1min
+agent.use(guard.timeout({ turn: 30_000, model: 10_000 })) // custom
+```
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `turn` | `number` | `120000` (2 min) | Maximum ms for a single turn |
+| `model` | `number` | `60000` (1 min) | Maximum ms for a single model call |
+
+**Hooks:** `turn`, `model` (both always active with defaults).
+
+Throws [`TurnTimeoutError`](/guides/errors/) when a limit is exceeded. Both options are optional; omit either to skip that check.
+
+---
+
+## guard.approve()
+
+Human-in-the-loop tool approval. Intercepts tool calls for tools with `requireApproval` set.
+
+```typescript
+function guardApprove(config: ApproveConfig): Middleware
+```
+
+The `ApprovalFunction` receives the tool name, args, and `ToolContext`:
+
+```typescript
+type ApprovalFunction = (
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+) => ApprovalDecision | Promise<ApprovalDecision>
+```
+
+```typescript
+import { guard, approve, deny, modify } from "agent-express"
+
+agent.use(guard.approve({
+  approve: async (toolName, args, ctx) => {
+    if (toolName === "delete_user") return deny("Blocked by policy")
+    if (toolName === "send_email") {
+      const confirmed = await askUser(`Send email to ${args.to}?`)
+      return confirmed ? approve() : deny("User declined")
+    }
+    return approve()
+  },
+}))
+```
+
+Three decision helpers are exported from `agent-express`:
+
+| Helper | Result | Description |
+|--------|--------|-------------|
+| `approve({ remember? })` | `{ action: "approve" }` | Allow the tool call. `remember: true` skips future approvals for this tool in this session. |
+| `deny(reason)` | `{ action: "deny", reason }` | Soft-block -- error message returned to the LLM so it can adapt. |
+| `modify(args)` | `{ action: "modify", args }` | Replace the tool call arguments. |
+
+**Hooks:** `tool` -- intercepts before execution.
+
+**State keys:**
+- `guard:approve:remembered` -- array of tool names that have been remembered
+
+Tools opt in to approval via `requireApproval` in [`tools.function()`](/guides/builtins/tools/):
+
+```typescript
+agent.use(tools.function({
+  name: "delete_file",
+  description: "Delete a file",
+  schema: z.object({ path: z.string() }),
+  execute: async ({ path }) => { /* ... */ },
+  requireApproval: true, // always require
+  // or: requireApproval: (args) => args.path.startsWith("/important")
+}))
+```

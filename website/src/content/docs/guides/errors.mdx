@@ -1,0 +1,337 @@
+---
+title: Errors
+description: "Reference for all error classes: AgentExpressError, AbortError, ModelError, and their subtypes."
+---
+
+All errors extend the base `AgentExpressError` class. Every error has a machine-readable `code`, a `retryable` flag, and an optional `cause` for error chaining.
+
+```typescript
+import {
+  AgentExpressError,
+  AbortError,
+  ModelError,
+  RateLimitError,
+  ContextOverflowError,
+  ContentFilterError,
+  AuthenticationError,
+  NetworkError,
+  ToolDeniedError,
+  ToolExecutionError,
+  SessionClosedError,
+  SessionBusyError,
+  StructuredOutputParseError,
+  StructuredOutputValidationError,
+  BudgetExceededError,
+  InputGuardrailError,
+  OutputGuardrailError,
+  TurnTimeoutError,
+} from "agent-express"
+```
+
+---
+
+## Error Hierarchy
+
+```
+AgentExpressError
+├── AbortError
+├── ModelError
+│   ├── RateLimitError
+│   ├── ContextOverflowError
+│   ├── ContentFilterError
+│   ├── AuthenticationError
+│   └── NetworkError
+├── ToolDeniedError
+├── ToolExecutionError
+├── SessionClosedError
+├── SessionBusyError
+├── StructuredOutputParseError
+├── StructuredOutputValidationError
+├── BudgetExceededError
+├── InputGuardrailError
+├── OutputGuardrailError
+└── TurnTimeoutError
+```
+
+---
+
+## AgentExpressError
+
+Base class for all framework errors. Extends `Error`.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `string` | Machine-readable error code (e.g., `"ABORT"`, `"RATE_LIMIT"`, `"TOOL_DENIED"`). |
+| `retryable` | `boolean` | Whether retry middleware should attempt to retry this error. |
+| `cause` | `Error?` | Original error that caused this one, if any. |
+
+```typescript
+try {
+  await agent.run("test").result
+} catch (err) {
+  if (err instanceof AgentExpressError) {
+    console.log(err.code, err.retryable)
+  }
+}
+```
+
+---
+
+## AbortError
+
+Thrown when `ctx.abort(reason)` is called in any middleware hook. This is a hard stop -- it unwinds the entire onion stack and rejects the `AgentRun.result` promise.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"ABORT"` | |
+| `retryable` | `false` | |
+| `reason` | `string` | The reason passed to `ctx.abort()`. |
+
+```typescript
+// In a middleware:
+turn: async (ctx, next) => {
+  if (ctx.state.totalCost > 1.00) ctx.abort("Budget exceeded")
+  await next()
+}
+```
+
+---
+
+## ModelError
+
+Base class for errors originating from LLM model providers. Subtypes cover specific failure modes.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"MODEL_ERROR"` | |
+| `provider` | `string` | Provider name (e.g., `"anthropic"`, `"openai"`). |
+| `statusCode` | `number?` | HTTP status code from the provider API, if available. |
+
+---
+
+## RateLimitError
+
+**Extends**: `ModelError`
+
+HTTP 429 -- the provider rate-limited the request. Retryable with backoff.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"RATE_LIMIT"` | |
+| `retryable` | `true` | |
+| `statusCode` | `429` | |
+| `retryAfter` | `number?` | Suggested wait time in **seconds** before retrying, if the provider sent one. |
+
+```typescript
+if (err instanceof RateLimitError) {
+  await sleep((err.retryAfter ?? 5) * 1000)
+}
+```
+
+---
+
+## ContextOverflowError
+
+**Extends**: `ModelError`
+
+The prompt exceeded the model's context window. Retryable after truncation (e.g., by `memory.compaction()`).
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"CONTEXT_OVERFLOW"` | |
+| `retryable` | `true` | |
+| `statusCode` | `400` | |
+
+---
+
+## ContentFilterError
+
+**Extends**: `ModelError`
+
+The provider blocked the request due to content policy. Not retryable.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"CONTENT_FILTER"` | |
+| `retryable` | `false` | |
+| `statusCode` | `400` | |
+
+---
+
+## AuthenticationError
+
+**Extends**: `ModelError`
+
+Invalid or missing API key. Not retryable.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"AUTH_ERROR"` | |
+| `retryable` | `false` | |
+| `statusCode` | `401` | |
+
+---
+
+## NetworkError
+
+**Extends**: `ModelError`
+
+Network-level failure (DNS, TCP, TLS). Retryable.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"NETWORK_ERROR"` | |
+| `retryable` | `true` | |
+| `statusCode` | `undefined` | |
+
+---
+
+## ToolDeniedError
+
+Thrown when `ctx.deny(reason)` is called in a `tool` hook. This is a **soft failure** -- the tool is not executed, and the LLM receives an error message so it can try a different approach. Does not unwind the stack.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"TOOL_DENIED"` | |
+| `retryable` | `false` | |
+| `toolName` | `string` | Name of the tool that was denied. |
+
+---
+
+## ToolExecutionError
+
+A tool's `execute()` function threw an error. Wrapped with the tool name for context.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"TOOL_EXECUTION"` | |
+| `retryable` | `false` | |
+| `toolName` | `string` | Name of the tool that failed. |
+| `cause` | `Error` | The original error thrown by the tool. |
+
+---
+
+## SessionClosedError
+
+Thrown when `session.run()` is called on a session that has been closed.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"SESSION_CLOSED"` | |
+| `retryable` | `false` | |
+| `sessionId` | `string` | ID of the closed session. |
+
+---
+
+## SessionBusyError
+
+Thrown when `session.run()` is called while a turn is already in progress. Sessions are single-threaded -- wait for the current turn to complete before starting another.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"SESSION_BUSY"` | |
+| `retryable` | `false` | |
+| `sessionId` | `string` | ID of the busy session. |
+
+---
+
+## BudgetExceededError
+
+Thrown by `guard.budget()` when the session cost limit is exceeded (only when `onLimit: "error"`, the default).
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"BUDGET_EXCEEDED"` | |
+| `retryable` | `false` | |
+| `cost` | `number` | Accumulated cost in USD at the time of the error. |
+| `limit` | `number` | Configured limit in USD. |
+
+---
+
+## InputGuardrailError
+
+Thrown by `guard.input()` when the input validator returns `{ ok: false }`.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"INPUT_VALIDATION"` | |
+| `retryable` | `false` | |
+| `reason` | `string` | Reason the input was rejected. |
+
+---
+
+## OutputGuardrailError
+
+Thrown by `guard.output()` when the output validator blocks a response and `onBlock: "error"` is set.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"OUTPUT_BLOCKED"` | |
+| `retryable` | `false` | |
+| `reason` | `string` | Reason the response was blocked. |
+
+---
+
+## TurnTimeoutError
+
+Thrown by `guard.timeout()` when a turn or model call exceeds its time limit.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"TIMEOUT"` | |
+| `retryable` | `false` | |
+| `timeoutMs` | `number` | Timeout that was exceeded, in milliseconds. |
+| `scope` | `"turn" \| "model"` | Whether this was a turn timeout or model call timeout. |
+
+---
+
+## StructuredOutputParseError
+
+Thrown when the model returns text that is not valid JSON for structured output.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"STRUCTURED_OUTPUT_PARSE"` | |
+| `retryable` | `false` | |
+| `rawText` | `string` | The raw model response (first 500 characters). |
+
+---
+
+## StructuredOutputValidationError
+
+Thrown when the parsed JSON does not match the expected Zod schema.
+
+| Property | Type | Description |
+|---|---|---|
+| `code` | `"STRUCTURED_OUTPUT_VALIDATION"` | |
+| `retryable` | `false` | |
+| `issues` | `unknown[]` | Zod validation issues array. |
+
+---
+
+## Catching Errors by Type
+
+Use `instanceof` checks to handle specific error types:
+
+```typescript
+import {
+  AgentExpressError,
+  BudgetExceededError,
+  RateLimitError,
+  InputGuardrailError,
+} from "agent-express"
+
+try {
+  const result = await agent.run("Hello").result
+} catch (err) {
+  if (err instanceof BudgetExceededError) {
+    console.log(`Over budget: $${err.cost} / $${err.limit}`)
+  } else if (err instanceof RateLimitError) {
+    console.log(`Rate limited, retry after ${err.retryAfter}s`)
+  } else if (err instanceof InputGuardrailError) {
+    console.log(`Input blocked: ${err.reason}`)
+  } else if (err instanceof AgentExpressError) {
+    console.log(`Agent error [${err.code}]: ${err.message}`)
+  }
+}
+```

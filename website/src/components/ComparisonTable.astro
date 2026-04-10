@@ -1,0 +1,243 @@
+---
+---
+
+<section class="comparison-section">
+  <div class="comparison-inner">
+    <h2 class="section-title">How it compares</h2>
+    <p class="section-subtitle">Fewer concepts, more built-in capabilities</p>
+
+    <div class="table-scroll">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th class="feature-col">Feature</th>
+            <th class="highlight-col">agent-express</th>
+            <th>Mastra</th>
+            <th>Vercel AI SDK</th>
+            <th>LangChain.js</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="feature-col">Core concepts</td>
+            <td class="highlight-col"><strong>3</strong></td>
+            <td>15-20</td>
+            <td>5-8</td>
+            <td>30+</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Extension model</td>
+            <td class="highlight-col"><code>Middleware (ctx, next)</code></td>
+            <td>Processors, Tools, Workflows</td>
+            <td>Hooks, Providers</td>
+            <td>Chains, Agents, Tools, Memory</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Built-in testing</td>
+            <td class="highlight-col"><span class="yes">Yes</span></td>
+            <td><span class="no">No</span></td>
+            <td><span class="no">No</span></td>
+            <td><span class="no">No</span></td>
+          </tr>
+          <tr>
+            <td class="feature-col">Cost control</td>
+            <td class="highlight-col"><code>guard.budget()</code></td>
+            <td>Manual</td>
+            <td>Manual</td>
+            <td>Manual</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Human-in-the-loop</td>
+            <td class="highlight-col"><code>guard.approve()</code></td>
+            <td>Manual</td>
+            <td><span class="no">No</span></td>
+            <td>Manual</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Sessions</td>
+            <td class="highlight-col">First-class <code>Session</code></td>
+            <td>Manual state</td>
+            <td><span class="no">No</span></td>
+            <td>Memory modules</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Memory management</td>
+            <td class="highlight-col"><code>memory.compaction()</code></td>
+            <td>Plugin-based</td>
+            <td><span class="no">No</span></td>
+            <td>Memory modules</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Observability</td>
+            <td class="highlight-col"><code>observe.*</code> namespace</td>
+            <td>External tools</td>
+            <td>Manual</td>
+            <td>Callbacks</td>
+          </tr>
+          <tr>
+            <td class="feature-col">Streaming</td>
+            <td class="highlight-col">SSE via <code>createHandler()</code></td>
+            <td>Built-in</td>
+            <td>First-class (<code>streamText</code>)</td>
+            <td>Callbacks</td>
+          </tr>
+          <tr>
+            <td class="feature-col">TypeScript</td>
+            <td class="highlight-col">Strict, ESM only</td>
+            <td>TypeScript</td>
+            <td>TypeScript</td>
+            <td>TypeScript</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<style>
+  .comparison-section {
+    padding: 0;
+    background: var(--bg, #111827);
+  }
+
+  .comparison-inner {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .section-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text, #f8fafc);
+    text-align: center;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .section-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-muted, #94a3b8);
+    text-align: center;
+    margin: 0 0 2.5rem;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+    border: 1px solid var(--border, #1e293b);
+  }
+
+  .comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    min-width: 700px;
+  }
+
+  .comparison-table thead tr {
+    background: var(--bg-subtle, #0b1120);
+  }
+
+  .comparison-table th {
+    padding: 0.875rem 1rem;
+    text-align: left;
+    color: var(--text-muted, #94a3b8);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border, #1e293b);
+    white-space: nowrap;
+  }
+
+  .comparison-table td {
+    padding: 0.75rem 1rem;
+    color: var(--text, #d1d5db);
+    border-bottom: 1px solid var(--border, #1e293b);
+    vertical-align: middle;
+  }
+
+  .comparison-table tbody tr:nth-child(odd) {
+    background: var(--bg, #111827);
+  }
+
+  .comparison-table tbody tr:nth-child(even) {
+    background: var(--bg-subtle, #0f172a);
+  }
+
+  .comparison-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* Highlight agent-express column */
+  .highlight-col {
+    background: rgba(124, 58, 237, 0.06) !important;
+    border-left: 2px solid var(--accent-light, #a78bfa);
+    border-right: 1px solid rgba(124, 58, 237, 0.15);
+  }
+
+  thead .highlight-col {
+    color: var(--accent-light, #a78bfa) !important;
+    font-weight: 700;
+  }
+
+  .feature-col {
+    color: var(--text, #f8fafc) !important;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  thead .feature-col {
+    color: var(--text-muted, #94a3b8) !important;
+  }
+
+  .comparison-table code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8rem;
+    color: var(--accent-light, #a78bfa);
+    background: rgba(124, 58, 237, 0.08);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+  }
+
+  .comparison-table strong {
+    color: var(--text, #f8fafc);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .yes {
+    color: #16a34a;
+    font-weight: 600;
+  }
+
+  .yes::before {
+    content: "✓ ";
+  }
+
+  .no {
+    color: #ef4444;
+    font-weight: 500;
+  }
+
+  .no::before {
+    content: "— ";
+  }
+
+  @media (max-width: 640px) {
+    .comparison-section {
+      padding: 0;
+    }
+
+    .section-title {
+      font-size: 1.375rem;
+    }
+
+    .table-scroll {
+      margin: 0 -0.5rem;
+      border-radius: 8px;
+    }
+  }
+</style>

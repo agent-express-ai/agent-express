@@ -1,0 +1,317 @@
+---
+title: "From Express.js to Agent Express: why middleware is all you need for building agentic AI"
+description: "Side-by-side comparison of Agent Express vs Mastra vs Vercel AI SDK vs LangChain.js for building tool-calling agents."
+head:
+  - tag: link
+    attrs:
+      rel: canonical
+      href: https://agent-express.ai/blog/agent-express-vs-alternatives
+  - tag: meta
+    attrs:
+      property: og:type
+      content: article
+sidebar:
+  hidden: true
+---
+
+<p style="color: var(--sl-color-gray-3); font-size: var(--sl-text-sm); margin-bottom: 2rem;">April 8, 2026 · <a href="https://github.com/kvikuz" style="color: var(--sl-color-gray-2); text-decoration: underline;">kvikuz</a></p>
+
+I wanted to add memory management to my agent. In one framework, that meant learning about "memory modules," "memory backends," "retriever chains," and "buffer window" classes. In another, I needed a "processor" config object nested three levels deep. I sat there staring at documentation tabs and thought: this is just middleware. Intercept the context before the model call, trim old messages, pass control downstream. Every web developer has written this pattern a hundred times.
+
+That realization is why Agent Express exists.
+
+## You already know how to build agents
+
+If you have written Express, Koa, or Hono middleware, you already understand the core abstraction for AI agents. The model-tool-model loop that powers every agent is structurally identical to the request-response cycle in a web server: a context flows through a stack of functions, each of which can inspect it, modify it, and decide whether to call `next()`.
+
+Memory? That is middleware that trims `ctx.history` before the model call. Budget caps? Middleware that checks `ctx.state` before `next()` and throws if the cost exceeds a limit. Retry? Middleware that wraps `next()` in a loop with exponential backoff. Tracing? Middleware that records timestamps around `next()`.
+
+Agent Express has three concepts: `Agent`, `Session`, and `Middleware`. One interface. Five composable hooks — `agent`, `session`, `turn`, `model`, `tool` — all following the same `(ctx, next)` signature. Six middleware namespaces ship out of the box: `guard`, `model`, `observe`, `memory`, `tools`, `dev`. Everything composes on one onion stack.
+
+No orchestration graphs. No chain classes. No processor config objects. Just `use()`.
+
+## What about in the Python ecosystem?
+
+We are not the first to recognize that middleware is the right abstraction for agents. Deep Agents — a LangChain-affiliated project with over 18,000 GitHub stars — proved this pattern works in Python. Their approach uses `wrap_model_call(handler)`, `before_tool_call`, and `after_tool_call` hooks to intercept the agent loop at key points.
+
+Agent Express brings the same idea to TypeScript, but with a more familiar interface. Instead of registering separate handler types for different lifecycle events, everything is `(ctx, next)`. The same mental model you use for CORS middleware or request logging applies directly to budget guards, retry logic, and token tracking.
+
+The difference is that Python's middleware ecosystem for agents grew organically from framework-specific hooks. In JavaScript and TypeScript, we have a decades-old convention — `app.use()` — that every backend developer already knows. Agent Express leans into that convention fully.
+
+## The same agent in 4 frameworks
+
+Let's build the same thing in each framework: a tool-calling agent that can look up weather data, with a $0.50 budget cap and automatic retry on transient failures. This is the minimum viable "production-ready agent" — you need tools, cost control, and resilience.
+
+> **Note on competitor examples:** The Agent Express code below is API-accurate, verified against the source. Mastra, Vercel AI SDK, and LangChain.js examples are simplified representations to illustrate architectural differences. They may require adjustments to compile against the latest versions of those frameworks.
+
+### Agent Express
+
+```typescript showLineNumbers
+import { Agent, guard, model, tools } from "agent-express"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "weather",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a weather assistant.",
+})
+
+agent.use(guard.budget({ limit: 0.50 }))
+agent.use(model.retry({ maxRetries: 2, initialDelayMs: 1000 }))
+agent.use(tools.function({
+  name: "get_weather",
+  description: "Get current weather for a city",
+  schema: z.object({ city: z.string() }),
+  execute: async ({ city }) => `72°F and sunny in ${city}`,
+}))
+
+const { text } = await agent.run("What's the weather in Tokyo?").result
+```
+
+Each concern is one `use()` call. Budget tracking, retry logic, and tool registration are all independent middleware that compose without knowing about each other. The agent ships with sensible defaults (usage tracking, max iterations, duration logging) that apply automatically unless you opt out with `defaults: false`.
+
+### Mastra
+
+```typescript showLineNumbers
+import { Agent, createTool } from "@mastra/core"
+import { z } from "zod"
+
+const weatherTool = createTool({
+  id: "get_weather",
+  description: "Get current weather for a city",
+  inputSchema: z.object({ city: z.string() }),
+  outputSchema: z.object({ result: z.string() }),
+  execute: async ({ context }) => {
+    return { result: `72°F and sunny in ${context.city}` }
+  },
+})
+
+const agent = new Agent({
+  name: "weather",
+  model: {
+    provider: "ANTHROPIC",
+    name: "claude-sonnet-4-6",
+  },
+  instructions: "You are a weather assistant.",
+  tools: { get_weather: weatherTool },
+})
+
+// Budget tracking requires a custom processor or integration
+// Retry is handled at the provider/infrastructure level
+const result = await agent.generate(
+  "What's the weather in Tokyo?",
+  {
+    maxSteps: 5,
+    // Budget and retry are typically configured at the
+    // platform level, not at the agent level
+    onStepFinish: (step) => {
+      // Manual cost tracking logic here
+      console.log("Step:", step.text)
+    },
+  }
+)
+console.log(result.text)
+```
+
+Mastra is a full-stack AI platform. Tools are defined with a separate `createTool` factory. The model config is an object with provider and name fields rather than a string. Budget tracking and retry are not first-class middleware — you handle them at the infrastructure layer or with custom callbacks. This is a reasonable trade-off for a platform that includes RAG, workflows, deployment, and an admin dashboard. But if you only need the agent loop, you are carrying a lot of surface area.
+
+### Vercel AI SDK
+
+```typescript showLineNumbers
+import { generateText, tool } from "ai"
+import { anthropic } from "@ai-sdk/anthropic"
+import { z } from "zod"
+
+let totalCost = 0
+const BUDGET_LIMIT = 0.50
+
+const result = await generateText({
+  model: anthropic("claude-sonnet-4-6"),
+  system: "You are a weather assistant.",
+  prompt: "What's the weather in Tokyo?",
+  tools: {
+    get_weather: tool({
+      description: "Get current weather for a city",
+      parameters: z.object({ city: z.string() }),
+      execute: async ({ city }) => `72°F and sunny in ${city}`,
+    }),
+  },
+  maxSteps: 5,
+  maxRetries: 2,
+  // Budget tracking is manual
+  onStepFinish: ({ usage }) => {
+    // Approximate cost calculation
+    const cost = (usage.promptTokens * 3 + usage.completionTokens * 15) / 1_000_000
+    totalCost += cost
+    if (totalCost > BUDGET_LIMIT) {
+      throw new Error("Budget exceeded")
+    }
+  },
+})
+```
+
+The Vercel AI SDK is excellent for what it is designed for: streaming AI responses in React and Next.js applications. `generateText` is a clean function call, and `maxRetries` is built in. But cross-cutting concerns like budget tracking become manual imperative code in callbacks. There is no composition model — if you want to add logging, you add another block to `onStepFinish`. Each concern you add makes the callback more tangled.
+
+### LangChain.js
+
+```typescript showLineNumbers
+import { ChatAnthropic } from "@langchain/anthropic"
+import { DynamicStructuredTool } from "@langchain/core/tools"
+import { createToolCallingAgent, AgentExecutor } from "langchain/agents"
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+import { z } from "zod"
+
+const llm = new ChatAnthropic({
+  model: "claude-sonnet-4-6",
+  maxRetries: 2,
+})
+
+const weatherTool = new DynamicStructuredTool({
+  name: "get_weather",
+  description: "Get current weather for a city",
+  schema: z.object({ city: z.string() }),
+  func: async ({ city }) => `72°F and sunny in ${city}`,
+})
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You are a weather assistant."],
+  ["human", "{input}"],
+  ["placeholder", "{agent_scratchpad}"],
+])
+
+const agent = createToolCallingAgent({ llm, tools: [weatherTool], prompt })
+
+let totalCost = 0
+const executor = new AgentExecutor({
+  agent,
+  tools: [weatherTool],
+  maxIterations: 5,
+  callbacks: [{
+    handleLLMEnd: (_output, _runId, _parentRunId, tags) => {
+      // Manual cost tracking in callback
+      // Budget enforcement requires custom callback handler
+    },
+  }],
+})
+
+const result = await executor.invoke({
+  input: "What's the weather in Tokyo?",
+})
+console.log(result.output)
+```
+
+LangChain has the richest ecosystem in AI tooling. The trade-off is conceptual surface area: `ChatPromptTemplate`, `DynamicStructuredTool`, `createToolCallingAgent`, `AgentExecutor`, callbacks, prompt placeholders. Each is well-documented, but a newcomer must learn all of them before they can build a tool-calling agent. Budget enforcement requires a custom callback handler class.
+
+### Line count comparison
+
+| Framework | Code lines | Built-in budget | Built-in retry | Tool definition |
+|---|---|---|---|---|
+| **Agent Express** | **16** | `guard.budget()` | `model.retry()` | `tools.function()` |
+| Vercel AI SDK | 26 | Manual callback | `maxRetries` | `tool()` helper |
+| Mastra | 30 | Platform-level | Platform-level | `createTool()` |
+| LangChain.js | 35 | Custom callback | `maxRetries` on LLM | `DynamicStructuredTool` |
+
+Line count (excluding comments and blanks) is not the whole story — what matters is how many concepts you need to hold in your head. Agent Express has one: middleware. Everything else is a specific middleware instance.
+
+## How the onion stack actually works
+
+The real power of middleware is not reducing line counts — it is composability. Let's trace what happens when you compose three middleware and the agent makes a model call.
+
+```typescript
+agent.use(observe.usage())      // Layer 1: token tracking
+agent.use(guard.budget({ limit: 0.50 }))  // Layer 2: cost enforcement
+agent.use(model.retry({ maxRetries: 2 })) // Layer 3: retry with backoff
+```
+
+All three register `model` hooks. When the agent loop needs to call the LLM, Agent Express composes them into an onion:
+
+```
+observe.usage → guard.budget → model.retry → [actual LLM call]
+```
+
+Here is what happens on each model call, step by step:
+
+**1. observe.usage (outer layer) — entry**
+The usage middleware calls `await next()`, passing control inward. It does nothing before the call — its job is to record usage *after* the response comes back.
+
+**2. guard.budget (middle layer) — pre-check**
+Before calling `next()`, budget reads `ctx.state['guard:budget:totalCost']`. If the accumulated cost already exceeds $0.50, it throws `BudgetExceededError` immediately — the LLM is never called. If the budget is fine, it calls `await next()` to continue inward.
+
+**3. model.retry (inner layer) — resilience**
+Retry wraps `await next()` in a loop. On the first attempt, it calls the actual LLM. If the call succeeds, the response flows back outward. If a `RateLimitError` is thrown, retry waits (exponential backoff, respecting `retryAfter` headers) and tries again — up to `maxRetries` times. Non-retryable errors like `AuthenticationError` propagate immediately.
+
+**4. The LLM responds**
+The model returns a response with `usage: { inputTokens: 1200, outputTokens: 350 }`.
+
+**5. model.retry (inner layer) — exit**
+The response was successful, so retry returns it unchanged.
+
+**6. guard.budget (middle layer) — post-accounting**
+After `next()` resolves, budget calculates the cost of this call using the model's pricing table (e.g., Claude Sonnet at $3/$15 per million tokens). It writes the cost delta to `ctx.state['guard:budget:totalCost']` via a reducer that sums all deltas. It also appends a `CostRecord` to `ctx.state['guard:budget:calls']`. The response passes through unchanged.
+
+**7. observe.usage (outer layer) — exit**
+After `next()` resolves, usage writes `response.usage` to `ctx.state['observe:usage']` via a reducer that sums `inputTokens` and `outputTokens` across all calls. The response returns to the agent loop.
+
+The critical point: **none of these middleware know about each other.** Budget does not import usage. Retry does not import budget. They compose because they all operate on the same `ModelContext` and communicate through `ctx.state` with namespaced keys. You can remove any one of them, reorder them, or add new ones without touching the others.
+
+This is the same property that makes Express middleware powerful for web servers. CORS middleware does not know about rate limiting. Auth middleware does not know about logging. They compose because they share a context and a `next()` contract.
+
+## When to consider the alternatives
+
+Agent Express is not the right choice for every project. Here is an honest assessment of when each framework shines.
+
+### Mastra: when you want a full-stack AI platform
+
+If your project needs built-in RAG pipelines, workflow orchestration, a visual builder, and managed deployment out of the box, Mastra delivers that as an integrated platform. You trade simplicity for comprehensive infrastructure. Mastra is particularly strong if you want to go from zero to a deployed agent with monitoring, without assembling individual pieces.
+
+### Vercel AI SDK: when you want the React hooks ecosystem
+
+If your primary use case is building AI-powered React/Next.js UI with hooks like `useChat` and `useCompletion`, the Vercel AI SDK provides that out of the box. Agent Express has streaming too (SSE via `createHandler()`), but doesn't ship React hooks — you'd write a thin fetch wrapper on the client side. The AI SDK is a UI-first toolkit with tight Vercel deployment integration; Agent Express is a backend-first middleware framework.
+
+### LangGraph: when you need graph-based orchestration
+
+If your agent architecture is fundamentally a state machine — with conditional branching, parallel execution paths, cycles, and checkpointing — LangGraph's graph topology is a better fit than a linear middleware stack. Complex multi-agent systems where agents hand off to each other with different state transitions benefit from explicit graph definitions. The middleware pattern works well for linear pipelines; graph-based topology works well for DAG workflows.
+
+### The architectural difference
+
+The frameworks above are not worse — they solve different problems at different abstraction levels. Agent Express makes a specific bet: that the middleware pattern, proven over a decade in web servers, is the right primitive for composing agent behavior. If your agent is fundamentally "loop over model calls with cross-cutting concerns," middleware gives you the most leverage with the least conceptual overhead.
+
+If your agent is fundamentally "navigate a complex state graph with conditional transitions between specialized sub-agents," you want a graph runtime.
+
+There is no single right answer. There is only the right match between your architecture and your abstraction.
+
+## Get started in 5 minutes
+
+Agent Express ships with sensible defaults. A production-ready agent with retry, usage tracking, iteration limits, and tool support is a few lines of code:
+
+```typescript
+import { Agent, tools } from "agent-express"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "my-agent",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+agent.use(tools.function({
+  name: "search",
+  description: "Search the web",
+  schema: z.object({ query: z.string() }),
+  execute: async ({ query }) => {
+    // your search implementation
+    return `Results for: ${query}`
+  },
+}))
+
+const { text } = await agent.run("Find recent news about TypeScript 6.0").result
+```
+
+That is it. Retry, usage tracking, max iterations, and duration logging are applied automatically via `defaults()`. Add `guard.budget()` when you need cost control. Add `observe.log()` when you need structured logging. Add `memory.compaction()` when conversations get long. Each concern is one `use()` call that composes with everything else.
+
+Three concepts. One pattern. 247+ tests.
+
+- [Getting started guide](https://agent-express.ai/getting-started/) — first agent in 5 minutes
+- [Middleware reference](https://agent-express.ai/reference/middleware/) — all 6 namespaces documented
+- [GitHub repository](https://github.com/vvkuz/agent-express) — star, fork, contribute
+- [Landing page](https://agent-express.ai/) — the full pitch

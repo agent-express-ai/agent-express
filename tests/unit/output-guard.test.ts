@@ -40,7 +40,7 @@ describe("guard.output()", () => {
     })
     agent.use(outputGuard((response) => {
       if (response.text && /\d{3}-\d{2}-\d{4}/.test(response.text)) {
-        return { ok: false, output: response.text.replace(/\d{3}-\d{2}-\d{4}/g, "[REDACTED]") }
+        return { ok: true, output: response.text.replace(/\d{3}-\d{2}-\d{4}/g, "[REDACTED]") }
       }
       return { ok: true }
     }))
@@ -58,7 +58,6 @@ describe("guard.output()", () => {
     })
     agent.use(outputGuard(() => ({
       ok: false,
-      blocked: true,
       reason: "Content policy violation",
     })))
 
@@ -105,7 +104,7 @@ describe("guard.output()", () => {
     // Output guard blocks dangerous tool calls
     agent.use(outputGuard((response) => {
       if (response.toolCalls?.some((tc) => tc.toolName === "danger")) {
-        return { blocked: true, reason: "Dangerous tool blocked" }
+        return { ok: false, reason: "Dangerous tool blocked" }
       }
       return { ok: true }
     }))

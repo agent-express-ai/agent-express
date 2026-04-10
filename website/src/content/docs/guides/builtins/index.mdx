@@ -1,0 +1,67 @@
+---
+title: Built-in Middleware
+description: "All 6 middleware namespaces: guard, observe, model, memory, tools, dev."
+---
+
+Agent Express ships with 16 middleware functions organized into 6 namespaces. All are imported from `agent-express`:
+
+```typescript
+import { guard, observe, model, memory, tools, dev } from "agent-express"
+```
+
+## defaults()
+
+By default, every Agent automatically applies a sensible set of middleware via the `defaults()` function. This includes:
+
+- `model.retry()` -- exponential backoff for transient LLM failures
+- `observe.usage()` -- token tracking
+- `observe.tools()` -- tool call recording
+- `observe.duration()` -- turn timing
+- `guard.maxIterations()` -- loop iteration limit (default: 25)
+
+### Customizing Defaults
+
+```typescript
+// Defaults with custom options
+const agent = new Agent({
+  name: "my-agent",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "...",
+  defaults: { maxIterations: 10, retry: { maxRetries: 3 } },
+})
+```
+
+### Opting Out
+
+```typescript
+// Bare minimum: no defaults applied
+const agent = new Agent({
+  name: "my-agent",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "...",
+  defaults: false,
+})
+```
+
+### Using `defaults()` Directly
+
+```typescript
+import { defaults } from "agent-express"
+
+// Get the default middleware array for custom composition
+const defaultMiddleware = defaults({ maxIterations: 15 })
+agent.use(defaultMiddleware)
+```
+
+---
+
+## Middleware Namespaces
+
+Agent Express organizes its built-in middleware into 6 namespaces:
+
+- **[Guard](/guides/builtins/guard/)** -- Safety middleware: budget, input/output validation, timeouts, iteration limits, tool approval.
+- **[Observe](/guides/builtins/observe/)** -- Observability middleware: token usage, tool calls, duration, structured logging.
+- **[Model](/guides/builtins/model/)** -- Model middleware: retry with backoff, complexity-based routing.
+- **[Memory](/guides/builtins/memory/)** -- Memory middleware: context window compaction with 5 strategies.
+- **[Tools](/guides/builtins/tools/)** -- Tool middleware: TypeScript function tools with Zod schemas, MCP server connection.
+- **[Dev](/guides/builtins/dev/)** -- Development middleware: full lifecycle terminal trace.

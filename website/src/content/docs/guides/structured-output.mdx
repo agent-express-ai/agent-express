@@ -1,0 +1,209 @@
+---
+title: Structured Output
+description: "Zod schemas for typed, validated LLM responses."
+---
+
+Agent Express supports structured output via Zod schemas. Pass a schema in `RunOptions.output` and the framework validates the LLM's response, returning typed data in `RunResult.data`.
+
+## Basic Usage
+
+```typescript
+import { Agent } from "agent-express"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "analyzer",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a sentiment analyzer. Always respond with valid JSON.",
+})
+
+const SentimentSchema = z.object({
+  sentiment: z.enum(["positive", "negative", "neutral"]),
+  confidence: z.number().min(0).max(1),
+  keywords: z.array(z.string()),
+})
+
+const result = await agent.run("I love this product!", {
+  output: SentimentSchema,
+}).result
+
+// result.data is typed as { sentiment, confidence, keywords }
+console.log(result.data)
+// { sentiment: "positive", confidence: 0.95, keywords: ["love", "product"] }
+```
+
+## How It Works
+
+1. The Zod schema is converted to JSON Schema and sent to the LLM via `responseFormat` (AI SDK's structured output mode)
+2. A system instruction is injected telling the LLM to respond with valid JSON matching the schema
+3. The LLM generates a JSON response
+4. The framework parses the response text as JSON
+5. The parsed JSON is validated against the Zod schema
+6. If valid, `result.data` contains the typed, validated object
+7. If invalid, a typed error is thrown (see [Error Handling](#error-handling))
+
+## RunOptions.output
+
+The `output` option accepts any Zod schema:
+
+```typescript
+// With session.run()
+const run = session.run("Analyze this text", {
+  output: SentimentSchema,
+})
+const result = await run.result
+
+// With agent.run() (convenience)
+const result = await agent.run("Analyze this text", {
+  output: SentimentSchema,
+}).result
+```
+
+## RunResult.data
+
+When `output` is set and validation succeeds:
+- `result.text` contains the raw LLM response (JSON string)
+- `result.data` contains the validated, typed object
+
+When `output` is not set:
+- `result.text` contains the LLM response
+- `result.data` is `undefined`
+
+## Defining Schemas
+
+Use standard Zod schemas. Complex nested structures are fully supported:
+
+```typescript
+const TodoSchema = z.object({
+  tasks: z.array(z.object({
+    title: z.string(),
+    priority: z.enum(["low", "medium", "high"]),
+    dueDate: z.string().optional(),
+    subtasks: z.array(z.string()).optional(),
+  })),
+  summary: z.string(),
+})
+
+const result = await agent.run("Plan a birthday party", {
+  output: TodoSchema,
+}).result
+
+for (const task of result.data.tasks) {
+  console.log(`[${task.priority}] ${task.title}`)
+}
+```
+
+## Error Handling
+
+Two typed errors can occur, both extending [`AgentExpressError`](/guides/errors/):
+
+### Invalid JSON
+
+If the LLM returns text that is not valid JSON, [`StructuredOutputParseError`](/guides/errors/) is thrown:
+
+```typescript
+import { StructuredOutputParseError } from "agent-express"
+
+try {
+  const result = await agent.run("Hello", { output: MySchema }).result
+} catch (err) {
+  if (err instanceof StructuredOutputParseError) {
+    console.log(err.rawText) // the raw model response (first 500 chars)
+  }
+}
+```
+
+### Schema Validation Failure
+
+If the JSON is valid but does not match the Zod schema, [`StructuredOutputValidationError`](/guides/errors/) is thrown:
+
+```typescript
+import { StructuredOutputValidationError } from "agent-express"
+
+try {
+  const result = await agent.run("Hello", { output: MySchema }).result
+} catch (err) {
+  if (err instanceof StructuredOutputValidationError) {
+    console.log(err.issues) // Zod validation issues array
+  }
+}
+```
+
+## Tips for Reliable Structured Output
+
+Agent Express automatically injects the JSON Schema and a format instruction into the system prompt, so you don't need to manually instruct the LLM to respond as JSON. However, these tips can improve reliability:
+
+### Use Descriptive Zod Schemas
+
+```typescript
+const schema = z.object({
+  sentiment: z.enum(["positive", "negative", "neutral"])
+    .describe("Overall sentiment of the text"),
+  confidence: z.number().min(0).max(1)
+    .describe("Confidence score between 0 and 1"),
+})
+```
+
+### Handle Errors Gracefully
+
+```typescript
+async function analyzeWithRetry(text: string, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await agent.run(text, { output: SentimentSchema }).result
+    } catch (err) {
+      if (i === retries) throw err
+      // Retry on validation failure
+    }
+  }
+}
+```
+
+## Complete Example
+
+```typescript
+import { Agent, tools } from "agent-express"
+import { z } from "zod"
+
+const WeatherReport = z.object({
+  location: z.string(),
+  temperature: z.number(),
+  unit: z.enum(["celsius", "fahrenheit"]),
+  conditions: z.string(),
+  forecast: z.array(z.object({
+    day: z.string(),
+    high: z.number(),
+    low: z.number(),
+    conditions: z.string(),
+  })),
+})
+
+const agent = new Agent({
+  name: "weather",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a weather reporter. Always respond with valid JSON.",
+})
+  .use(tools.function({
+    name: "get_weather",
+    description: "Get weather data for a location",
+    schema: z.object({ location: z.string() }),
+    execute: async ({ location }) => ({
+      location,
+      temp: 72,
+      conditions: "Sunny",
+      forecast: [
+        { day: "Tomorrow", high: 75, low: 60, conditions: "Partly cloudy" },
+      ],
+    }),
+  }))
+
+const result = await agent.run("What's the weather in San Francisco?", {
+  output: WeatherReport,
+}).result
+
+console.log(`${result.data.location}: ${result.data.temperature}${result.data.unit === "celsius" ? "C" : "F"}`)
+console.log(`Conditions: ${result.data.conditions}`)
+for (const day of result.data.forecast) {
+  console.log(`  ${day.day}: ${day.high}/${day.low} - ${day.conditions}`)
+}
+```

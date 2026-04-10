@@ -21,9 +21,9 @@ export class TurnTimeoutError extends AgentExpressError {
  * Configuration for the `guard.timeout()` middleware.
  */
 export interface TimeoutConfig {
-  /** Maximum time in milliseconds for a single turn. */
+  /** Maximum time in milliseconds for a single turn. Default: 120000 (2 minutes). */
   turn?: number
-  /** Maximum time in milliseconds for a single model call. */
+  /** Maximum time in milliseconds for a single model call. Default: 60000 (1 minute). */
   model?: number
 }
 
@@ -34,22 +34,24 @@ export interface TimeoutConfig {
  * Throws `TurnTimeoutError` when a limit is exceeded. Timeouts are cleaned up
  * via `try/finally` to prevent resource leaks.
  *
- * @param config - Timeout configuration with optional turn and model limits in ms
+ * @param config - Timeout configuration. Defaults: turn 120s, model 60s.
  * @returns Middleware that enforces time limits
  *
  * @example
  * ```typescript
- * agent.use(guard.timeout({ turn: 30_000, model: 10_000 }))
+ * agent.use(guard.timeout())                              // defaults: turn 2min, model 1min
+ * agent.use(guard.timeout({ turn: 30_000 }))              // custom turn, default model
+ * agent.use(guard.timeout({ turn: 30_000, model: 10_000 })) // both custom
  * ```
  */
-export function guardTimeout(config: TimeoutConfig): Middleware {
-  const mw: Middleware = {
-    name: "guard:timeout",
-  }
+export function guardTimeout(config: TimeoutConfig = {}): Middleware {
+  const turnTimeout = config.turn ?? 120_000
+  const modelTimeout = config.model ?? 60_000
 
-  if (config.turn) {
-    const turnTimeout = config.turn
-    mw.turn = async (_ctx: TurnContext, next: () => Promise<void>): Promise<void> => {
+  return {
+    name: "guard:timeout",
+
+    async turn(_ctx: TurnContext, next: () => Promise<void>): Promise<void> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), turnTimeout)
 
@@ -66,12 +68,9 @@ export function guardTimeout(config: TimeoutConfig): Middleware {
       } finally {
         clearTimeout(timer)
       }
-    }
-  }
+    },
 
-  if (config.model) {
-    const modelTimeout = config.model
-    mw.model = async (_ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> => {
+    async model(_ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), modelTimeout)
 
@@ -88,8 +87,6 @@ export function guardTimeout(config: TimeoutConfig): Middleware {
       } finally {
         clearTimeout(timer)
       }
-    }
+    },
   }
-
-  return mw
 }

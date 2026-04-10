@@ -1,0 +1,130 @@
+---
+import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter';
+import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro';
+import SidebarSublist from '@astrojs/starlight/components/SidebarSublist.astro';
+import { getCollection } from 'astro:content';
+
+const { sidebar } = Astro.locals.starlightRoute;
+const routeId = Astro.locals.starlightRoute.id || Astro.locals.starlightRoute.slug || '';
+const isBlogPage = routeId.startsWith('blog/');
+
+// Get blog posts sorted by date (newest first) for blog sidebar
+let blogPosts: { title: string; slug: string; date: string }[] = [];
+if (isBlogPage) {
+  const docs = await getCollection('docs');
+  blogPosts = docs
+    .filter((doc) => doc.id.startsWith('blog/'))
+    .map((doc) => {
+      // Extract date from the content if available
+      const content = doc.body || '';
+      const dateMatch = content.match(/(\w+ \d+, \d{4})/);
+      return {
+        title: doc.data.title,
+        slug: doc.id,
+        date: dateMatch ? dateMatch[1] : '',
+      };
+    })
+    .reverse(); // newest first
+}
+---
+
+{isBlogPage ? (
+  <SidebarPersister>
+    <nav class="blog-sidebar" aria-label="Blog posts">
+      <h2 class="blog-sidebar-title">Blog</h2>
+      <ul class="blog-sidebar-list">
+        {blogPosts.map((post) => {
+          const isActive = Astro.locals.starlightRoute.slug === post.slug;
+          return (
+            <li>
+              <a
+                href={`/${post.slug}/`}
+                class:list={['blog-sidebar-link', { active: isActive }]}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <span class="blog-sidebar-post-title">{post.title}</span>
+                {post.date && <span class="blog-sidebar-date">{post.date}</span>}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  </SidebarPersister>
+) : (
+  <SidebarPersister>
+    <SidebarSublist sublist={sidebar} />
+  </SidebarPersister>
+)}
+
+<div class="md:sl-hidden">
+  <MobileMenuFooter />
+</div>
+
+<style>
+  .blog-sidebar {
+    padding: 0.5rem 0;
+  }
+
+  .blog-sidebar-title {
+    font-size: var(--sl-text-lg);
+    font-weight: 600;
+    color: var(--sl-color-white);
+    padding: 0.375rem var(--sl-sidebar-item-padding-inline);
+    margin-bottom: 0.5rem;
+  }
+
+  .blog-sidebar-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .blog-sidebar-link {
+    display: block;
+    padding: 0.5rem var(--sl-sidebar-item-padding-inline);
+    text-decoration: none;
+    border-radius: 0.25rem;
+    transition: color 0.15s;
+  }
+
+  .blog-sidebar-link:not(.active) {
+    color: var(--sl-color-gray-2);
+  }
+
+  .blog-sidebar-link:hover {
+    color: var(--sl-color-white);
+  }
+
+  .blog-sidebar-link.active {
+    color: #c4b5fd;
+    font-weight: 600;
+  }
+
+  .blog-sidebar-post-title {
+    display: block;
+    font-size: var(--sl-text-sm);
+    line-height: 1.4;
+  }
+
+  .blog-sidebar-date {
+    display: block;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+    margin-top: 0.125rem;
+  }
+
+  .blog-sidebar-back {
+    display: block;
+    margin-top: 1.5rem;
+    padding: 0.375rem var(--sl-sidebar-item-padding-inline);
+    color: var(--sl-color-gray-3);
+    text-decoration: none;
+    font-size: var(--sl-text-sm);
+    transition: color 0.15s;
+  }
+
+  .blog-sidebar-back:hover {
+    color: var(--sl-color-white);
+  }
+</style>

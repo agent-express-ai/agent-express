@@ -1,0 +1,406 @@
+---
+title: Middleware
+description: "Writing custom middleware with the (ctx, next) pattern."
+---
+
+Agent Express has a single extension mechanism: **middleware**. Every middleware implements the same `Middleware` interface with up to 5 onion hooks, all following the `(ctx, next)` pattern.
+
+## The Middleware Interface
+
+```typescript
+import type { Middleware } from "agent-express"
+
+const myMiddleware: Middleware = {
+  name: "my-middleware",
+
+  // Optional: declare session state fields
+  state: {
+    "my:counter": { default: 0, reducer: (prev, delta) => prev + delta },
+  },
+
+  // Any subset of 5 hooks:
+  agent:   async (ctx, next) => { /* ... */ await next() },
+  session: async (ctx, next) => { /* ... */ await next() },
+  turn:    async (ctx, next) => { /* ... */ await next() },
+  model:   async (ctx, next) => { /* ... */ return await next() },
+  tool:    async (ctx, next) => { /* ... */ return await next() },
+}
+```
+
+A middleware only needs to implement the hooks it cares about. The `name` field is required for debugging and tracing.
+
+## The 5 Onion Hooks
+
+Hooks are nested from outermost to innermost. Each hook wraps a different lifecycle phase:
+
+| Hook | Wraps | Context | Returns |
+|------|-------|---------|---------|
+| `agent` | Agent lifetime (init to dispose) | `AgentContext` | `void` |
+| `session` | One session lifecycle (open to close) | `SessionContext` | `void` |
+| `turn` | One user message to assistant response cycle | `TurnContext` | `void` |
+| `model` | One LLM call | `ModelContext` | `ModelResponse` |
+| `tool` | One tool execution | `ToolContext` | `ToolResult` |
+
+Contexts form a hierarchy: `ModelContext` and `ToolContext` both extend `TurnContext`, which extends `SessionContext`, which extends `AgentContext`. Deeper hooks can access everything from shallower hooks.
+
+### Agent Hook
+
+Wraps the entire agent lifetime. Code before `next()` runs during `agent.init()`, code after runs during `agent.dispose()`. Use this to register tools and manage resources.
+
+```typescript
+const database: Middleware = {
+  name: "database",
+  async agent(ctx, next) {
+    // Read connection URL from middleware config
+    const url = ctx.config.databaseUrl as string
+
+    // Open connection before agent starts
+    const db = await connect(url)
+
+    // Register a tool that uses the connection
+    ctx.registerTool({
+      name: "query_users",
+      description: "Look up users in the database",
+      jsonSchema: { type: "object", properties: { email: { type: "string" } } },
+      execute: async ({ email }) => db.findUser(email),
+    })
+
+    try {
+      await next() // Agent is running, connection is open
+    } finally {
+      // Close connection when agent disposes
+      await db.close()
+    }
+  },
+}
+
+// Pass config when creating the agent
+const agent = new Agent({ ... })
+  .use(database, { databaseUrl: "postgres://localhost:5432/myapp" })
+```
+
+**AgentContext** provides:
+- `ctx.agent` -- agent definition (name, model, instructions)
+- `ctx.registerTool(tool)` -- register a tool on the agent
+- `ctx.config` -- middleware-specific configuration
+
+### Session Hook
+
+Wraps a session lifecycle. Code before `next()` runs when the session starts, code after runs when `session.close()` is called.
+
+```typescript
+const persistence: Middleware = {
+  name: "persistence",
+  async session(ctx, next) {
+    // Restore previous conversation from storage
+    const saved = await db.loadSession(ctx.sessionId)
+    if (saved) {
+      for (const msg of saved.history) ctx.history.push(msg)
+      Object.assign(ctx.state, saved.state)
+    }
+
+    try {
+      await next() // Session is running, turns execute here
+    } finally {
+      // Save conversation when session closes
+      await db.saveSession(ctx.sessionId, {
+        history: ctx.history,
+        state: ctx.state,
+      })
+    }
+  },
+}
+```
+
+**SessionContext** adds:
+- `ctx.sessionId` -- unique session identifier
+- `ctx.state` -- session state (typed fields with optional reducers)
+- `ctx.history` -- canonical conversation history (append-only)
+- `ctx.emit(event)` -- emit a stream event
+
+### Turn Hook
+
+Wraps one turn: user message in, assistant response out.
+
+```typescript
+const auditLog: Middleware = {
+  name: "audit-log",
+  async turn(ctx, next) {
+    const start = Date.now()
+
+    // Check input before the turn runs
+    const userMessage = ctx.input[ctx.input.length - 1]
+    console.log(`[turn #${ctx.turnIndex}] User: ${userMessage?.content}`)
+
+    await next()
+
+    // Log result after the turn completes
+    console.log(`[turn #${ctx.turnIndex}] Assistant: ${ctx.output}`)
+    console.log(`[turn #${ctx.turnIndex}] Duration: ${Date.now() - start}ms`)
+  },
+}
+```
+
+**TurnContext** adds:
+- `ctx.input` -- input messages for this turn
+- `ctx.output` -- assistant text output (`null` until turn completes)
+- `ctx.turnId` -- unique turn identifier
+- `ctx.turnIndex` -- turn number (0-based)
+- `ctx.startedAt` -- timestamp when turn started
+- `ctx.abort(reason)` -- hard-stop the turn (throws `AbortError`)
+
+### Model Hook
+
+Wraps a single LLM call. This is the only hook that **returns a value** (`ModelResponse`).
+
+```typescript
+const responseCache: Middleware = {
+  name: "response-cache",
+  async model(ctx, next) {
+    // Check cache before calling the LLM
+    const key = JSON.stringify(ctx.messages)
+    const cached = await cache.get(key)
+    if (cached) return ctx.skipCall(cached) // Skip LLM, return cached response
+
+    const response = await next() // LLM call happens here
+
+    // Store response in cache after successful call
+    await cache.set(key, response)
+    return response
+  },
+}
+```
+
+**ModelContext** adds:
+- `ctx.messages` -- mutable message array for this call (safe to modify)
+- `ctx.model` -- current model identifier
+- `ctx.toolDefs` -- tool schemas sent to the LLM
+- `ctx.callIndex` -- which model call in this turn (0-based)
+- `ctx.setModel(model)` -- override the model for this call
+- `ctx.addSystemMessage(text)` -- prepend a system message
+- `ctx.addMessage(msg)` -- append a message
+- `ctx.removeTools(...names)` -- remove tools by name
+- `ctx.skipCall(response)` -- skip the LLM call, return a synthetic response
+
+### Tool Hook
+
+Wraps a single tool execution. Returns a `ToolResult`.
+
+```typescript
+const toolSanitizer: Middleware = {
+  name: "tool-sanitizer",
+  async tool(ctx, next) {
+    // Block dangerous tools
+    if (ctx.tool.name === "delete_all") {
+      return ctx.deny("This tool is disabled by policy")
+    }
+
+    // Sanitize arguments before execution
+    if (ctx.tool.name === "send_email" && ctx.args.to) {
+      ctx.modifyArgs({ ...ctx.args, to: ctx.args.to.toLowerCase() })
+    }
+
+    const result = await next() // Tool executes here
+    return result
+  },
+}
+```
+
+**ToolContext** adds:
+- `ctx.tool` -- tool definition (name, description, jsonSchema, requireApproval)
+- `ctx.args` -- arguments from the LLM
+- `ctx.callId` -- tool call ID from the model response
+- `ctx.callIndex` -- which tool call in this model response (0-based)
+- `ctx.modifyArgs(newArgs)` -- replace or merge tool arguments
+- `ctx.approve()` -- explicitly approve the tool call
+- `ctx.deny(reason)` -- soft-deny (returns error message to LLM)
+- `ctx.skipCall(result)` -- skip execution, return synthetic result
+
+## Registering Middleware with `agent.use()`
+
+The `use()` method is chainable and accepts four forms:
+
+### Middleware Object
+
+```typescript
+agent.use({
+  name: "my-middleware",
+  turn: async (ctx, next) => { await next() },
+  model: async (ctx, next) => { return await next() },
+})
+```
+
+### Plain Function (Turn Shorthand)
+
+A plain function is treated as a `turn` hook:
+
+```typescript
+agent.use(async (ctx, next) => {
+  console.log(`Turn ${ctx.turnIndex}`)
+  await next()
+})
+```
+
+### Scope + Function
+
+For any hook, pass the scope name and function:
+
+```typescript
+agent.use("model", async (ctx, next) => {
+  console.log(`Model call #${ctx.callIndex}`)
+  return await next()
+})
+
+agent.use("tool", async (ctx, next) => {
+  console.log(`Tool: ${ctx.tool.name}`)
+  return await next()
+})
+```
+
+### Array of Middleware
+
+Pass an array to register multiple middleware at once:
+
+```typescript
+agent.use([middlewareA, middlewareB, middlewareC])
+```
+
+### Chaining
+
+All forms are chainable:
+
+```typescript
+const agent = new Agent({ name: "demo", model: "anthropic/claude-sonnet-4-6", instructions: "..." })
+  .use(guard.budget({ limit: 1.00 }))
+  .use(observe.usage())
+  .use(tools.function({ name: "greet", description: "Greet", schema: z.object({ name: z.string() }), execute: async ({ name }) => `Hi ${name}` }))
+```
+
+## Before/After `next()` Semantics
+
+The `(ctx, next)` pattern splits middleware into two phases:
+
+```typescript
+async model(ctx, next) {
+  // BEFORE: runs on the way IN (before the LLM call)
+  ctx.addSystemMessage("Be helpful.")
+
+  const response = await next()
+
+  // AFTER: runs on the way OUT (after the LLM call)
+  console.log(`Used ${response.usage.outputTokens} tokens`)
+  return response
+}
+```
+
+For `void` hooks (`agent`, `session`, `turn`), use `try/finally` for guaranteed cleanup:
+
+```typescript
+async agent(ctx, next) {
+  const connection = await connectToDatabase()
+  try {
+    await next()
+  } finally {
+    await connection.close()
+  }
+}
+```
+
+## Composition and Ordering
+
+Middleware executes in **registration order** on the way in, and **reverse order** on the way out (onion model):
+
+```typescript
+agent.use(middlewareA) // A enters first, exits last
+agent.use(middlewareB) // B enters second, exits second
+agent.use(middlewareC) // C enters third, exits first
+```
+
+Execution flow: `A.before -> B.before -> C.before -> core -> C.after -> B.after -> A.after`
+
+This matters for middleware that depends on other middleware. For example, `model.retry()` should be registered before `observe.usage()` so that retried calls are counted.
+
+## Short-Circuiting
+
+Middleware can skip inner execution by not calling `next()`.
+
+### In the Model Hook
+
+Use `ctx.skipCall()` to return a cached or synthetic response without calling the LLM:
+
+```typescript
+const cache = new Map<string, ModelResponse>()
+
+const cacheMiddleware: Middleware = {
+  name: "cache",
+  async model(ctx, next) {
+    const key = JSON.stringify(ctx.messages)
+    const cached = cache.get(key)
+    if (cached) {
+      ctx.skipCall(cached)
+      return cached
+    }
+    const response = await next()
+    cache.set(key, response)
+    return response
+  },
+}
+```
+
+### In the Tool Hook
+
+Use `ctx.deny()` to soft-block a tool call (error message returned to LLM) or `ctx.skipCall()` to return a mock result:
+
+```typescript
+const safeguard: Middleware = {
+  name: "safeguard",
+  async tool(ctx, next) {
+    if (ctx.tool.name === "dangerous_operation") {
+      ctx.deny("This operation is not allowed")
+      return next() // deny sets the result, next() respects it
+    }
+    return next()
+  },
+}
+```
+
+### In the Turn Hook
+
+Use `ctx.abort(reason)` to hard-stop. This throws an [`AbortError`](/guides/errors/) that unwinds the entire onion:
+
+```typescript
+async turn(ctx, next) {
+  if (ctx.input.some(m => typeof m.content === "string" && m.content.includes("shutdown"))) {
+    ctx.abort("Emergency shutdown requested")
+  }
+  await next()
+}
+```
+
+## Declaring State
+
+Middleware can declare session state fields with the `state` property. Each field has a `default` value and an optional `reducer`:
+
+```typescript
+const costTracker: Middleware = {
+  name: "cost-tracker",
+  state: {
+    "cost:total": {
+      default: 0,
+      reducer: (prev, delta) => prev + delta, // additive
+    },
+    "cost:calls": {
+      default: [],
+      reducer: (prev, delta) => [...prev, ...delta], // append
+    },
+  },
+  async model(ctx, next) {
+    const response = await next()
+    ctx.state["cost:total"] = 0.003 // dispatches through reducer: 0 + 0.003
+    ctx.state["cost:calls"] = [{ model: ctx.model }]
+    return response
+  },
+}
+```
+
+Without a reducer, writes use last-write-wins semantics. State is accessible via `ctx.state` in any hook at session level or deeper, and in `RunResult.state` after a turn completes.

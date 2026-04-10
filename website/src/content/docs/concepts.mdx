@@ -1,0 +1,344 @@
+---
+title: Concepts
+description: "The three core abstractions: Agent, Session, and Middleware."
+sidebar:
+  order: 2
+---
+
+Three concepts. That's the entire framework.
+
+Agent Express is built on three abstractions: **Agent**, **Session**, and **Middleware**. If you understand Express.js middleware, you already understand 80% of this framework. The remaining 20% is that middleware can hook into five different lifecycle levels, not just one.
+
+```
+Agent  →  creates Sessions
+Session  →  executes Turns
+Turn  →  runs model → tool → model loop
+Middleware  →  intercepts at any level
+```
+
+## Agent
+
+The **Agent** is the top-level container. It holds the model configuration, system instructions, and registered middleware. You create one, add middleware, initialize it, then use it to create sessions or run one-off queries.
+
+```typescript
+import { Agent } from "agent-express"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+```
+
+That's a working agent. The `AgentDef` requires three fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Name for debugging and tracing |
+| `model` | `string \| LanguageModelV3` | Model identifier (`"provider/model"` format) or an AI SDK model object |
+| `instructions` | `string` | System prompt injected into every model call |
+
+### Lifecycle
+
+An Agent has an explicit lifecycle: `init()` and `dispose()`.
+
+```typescript
+await agent.init()    // resolve model, run agent-level middleware (connect MCP servers, register tools)
+// ... use the agent ...
+await agent.dispose() // cleanup: close sessions, unwind middleware
+```
+
+`init()` is idempotent -- calling it twice is safe. `dispose()` auto-closes any open sessions before unwinding middleware in reverse registration order.
+
+For automatic cleanup, Agent supports `Symbol.asyncDispose`:
+
+```typescript
+await using agent = new Agent({ ... })
+// agent.dispose() called automatically when leaving scope
+```
+
+### Quick Runs
+
+For single-turn use cases, `agent.run()` handles everything -- init, session creation, execution, and cleanup:
+
+```typescript
+const { text } = await agent.run("What is 2 + 2?").result
+```
+
+This is a convenience shorthand. For multi-turn conversations, use sessions.
+
+## Session
+
+A **Session** is a multi-turn conversation container. It holds the conversation history and state that persist across turns. Sessions are created from an initialized agent.
+
+```typescript
+await agent.init()
+
+const session = agent.session()
+
+const r1 = await session.run("Hello! My name is Alice.").result
+console.log(r1.text) // "Hello Alice! How can I help you?"
+
+const r2 = await session.run("What's my name?").result
+console.log(r2.text) // "Your name is Alice."
+
+await session.close()
+await agent.dispose()
+```
+
+Each call to `session.run()` executes one **turn** -- a single user message in, assistant response out. Between turns, the session accumulates conversation history automatically, so the model remembers prior context.
+
+### Session Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `id` | `string` | Unique session identifier (auto-generated UUID, or custom via `agent.session({ id: "..." })`) |
+| `history` | `Message[]` | Flat chronological conversation history, auto-accumulates across turns |
+| `state` | `Record<string, unknown>` | Session state -- middleware writes data here under well-known keys |
+
+### RunResult
+
+Every `session.run()` (and `agent.run()`) returns an `AgentRun` with a `.result` promise that resolves to a `RunResult`:
+
+```typescript
+interface RunResult {
+  text: string                    // assistant text response
+  state: Record<string, unknown>  // session state snapshot at turn end
+  data?: unknown                  // validated structured data (when using output schema)
+}
+```
+
+The result is intentionally minimal. All metadata -- token usage, tool calls, duration -- lives in `state` under well-known keys written by middleware (e.g., `state['observe:usage']`, `state['observe:tools']`).
+
+### Session Cleanup
+
+Like Agent, Session supports `Symbol.asyncDispose`:
+
+```typescript
+await using session = agent.session()
+const { text } = await session.run("Hello").result
+// session.close() called automatically
+```
+
+## Middleware
+
+**Middleware** is the single extension mechanism. Everything beyond the core model-tool loop -- retries, logging, cost tracking, tool approval, context management -- is middleware.
+
+The interface is simple: a named object with hook functions.
+
+```typescript
+import type { Middleware } from "agent-express"
+
+const logger: Middleware = {
+  name: "logger",
+  turn: async (ctx, next) => {
+    console.log(`Turn ${ctx.turnIndex} started`)
+    await next()
+    console.log(`Turn ${ctx.turnIndex} done: ${ctx.output}`)
+  },
+}
+```
+
+Every hook follows the same `(ctx, next)` pattern:
+
+- Code **before** `await next()` runs on the way **in**
+- Code **after** `await next()` runs on the way **out**
+- Calling `next()` passes control to the next middleware (or the core logic)
+- Not calling `next()` short-circuits the chain
+
+### Registering Middleware
+
+Use `.use()` on the agent. It's chainable.
+
+```typescript
+const agent = new Agent({ ... })
+  .use(logger)
+  .use(costTracker)
+  .use(rateLimiter)
+```
+
+`.use()` accepts several forms:
+
+```typescript
+// Full middleware object
+agent.use({ name: "my-mw", turn: async (ctx, next) => { ... } })
+
+// Plain function = turn hook shorthand
+agent.use(async (ctx, next) => {
+  console.log("turn intercepted")
+  await next()
+})
+
+// Scope + function for any hook
+agent.use("model", async (ctx, next) => {
+  console.log(`Calling model: ${ctx.model}`)
+  return await next()
+})
+
+// Array of middleware
+agent.use([middlewareA, middlewareB])
+```
+
+### State
+
+Middleware can declare state fields with defaults and optional reducers:
+
+```typescript
+const costTracker: Middleware = {
+  name: "cost-tracker",
+  state: {
+    totalCost: { default: 0, reducer: (prev, delta) => prev + delta },
+  },
+  model: async (ctx, next) => {
+    const response = await next()
+    ctx.state.totalCost = response.usage.inputTokens * 0.003
+    return response
+  },
+}
+```
+
+With a reducer, `ctx.state.totalCost = 0.05` doesn't overwrite -- it dispatches through the reducer, so costs accumulate. Without a reducer, it's last-write-wins.
+
+## The Onion Model
+
+Middleware in Agent Express uses the onion model at five nested lifecycle levels. Each level has its own context type with progressively more data available.
+
+```
+┌─────────────────────────────────────────────────────┐
+│ agent  (AgentContext)                               │
+│   init ──────────────────────────────── dispose     │
+│                                                     │
+│  ┌───────────────────────────────────────────────┐  │
+│  │ session  (SessionContext)                     │  │
+│  │   open ─────────────────────────── close      │  │
+│  │                                               │  │
+│  │  ┌─────────────────────────────────────────┐  │  │
+│  │  │ turn  (TurnContext)                     │  │  │
+│  │  │   input ─────────────────── output      │  │  │
+│  │  │                                         │  │  │
+│  │  │  ┌───────────────────────────────────┐  │  │  │
+│  │  │  │ model  (ModelContext)             │  │  │  │
+│  │  │  │   messages → LLM → response      │  │  │  │
+│  │  │  └───────────────────────────────────┘  │  │  │
+│  │  │                                         │  │  │
+│  │  │  ┌───────────────────────────────────┐  │  │  │
+│  │  │  │ tool  (ToolContext)               │  │  │  │
+│  │  │  │   args → execute → result         │  │  │  │
+│  │  │  └───────────────────────────────────┘  │  │  │
+│  │  │                                         │  │  │
+│  │  └─────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+### The Five Hooks
+
+| Hook | Context | Wraps | Use for |
+|---|---|---|---|
+| `agent` | `AgentContext` | Agent lifetime (init to dispose) | Tool registration, MCP connections, resource setup/teardown |
+| `session` | `SessionContext` | One session (open to close) | Per-session setup, analytics, persistence |
+| `turn` | `TurnContext` | One user-assistant exchange | Logging, timing, input/output validation |
+| `model` | `ModelContext` | One LLM call | Retry, caching, routing, message manipulation |
+| `tool` | `ToolContext` | One tool execution | Approval, auditing, mocking, argument modification |
+
+Each deeper context extends the one above it. `ModelContext` has everything from `TurnContext`, which has everything from `SessionContext`, and so on. This means a `model` hook can access `ctx.sessionId`, `ctx.turnIndex`, and `ctx.messages` all at once.
+
+### Middleware Execution Order
+
+Middleware runs in registration order going in, reverse order coming out -- like layers of an onion:
+
+```typescript
+agent.use(A)  // A's before-next runs first
+agent.use(B)  // B's before-next runs second
+agent.use(C)  // C's before-next runs third, closest to core
+
+// Execution order:
+// A before → B before → C before → [core] → C after → B after → A after
+```
+
+### Hook Return Types
+
+The `turn`, `agent`, and `session` hooks return `Promise<void>` -- they wrap a lifecycle. The `model` hook returns `Promise<ModelResponse>` and the `tool` hook returns `Promise<ToolResult>`, so middleware can transform what the LLM returns or what a tool produces:
+
+```typescript
+const cacheMiddleware: Middleware = {
+  name: "cache",
+  model: async (ctx, next) => {
+    const cached = cache.get(ctx.messages)
+    if (cached) {
+      ctx.skipCall(cached)  // skip the LLM call entirely
+    }
+    const response = await next()
+    cache.set(ctx.messages, response)
+    return response
+  },
+}
+```
+
+## How It All Fits Together
+
+Here is a complete example showing Agent, Session, and custom Middleware working together:
+
+```typescript
+import { Agent, tools, observe, guard } from "agent-express"
+import type { Middleware } from "agent-express"
+import { z } from "zod"
+
+// 1. Define a custom middleware
+const auditLog: Middleware = {
+  name: "audit-log",
+  turn: async (ctx, next) => {
+    const start = Date.now()
+    await next()
+    console.log(JSON.stringify({
+      sessionId: ctx.sessionId,
+      turn: ctx.turnIndex,
+      input: ctx.input[0]?.content,
+      output: ctx.output,
+      duration: Date.now() - start,
+    }))
+  },
+}
+
+// 2. Create an agent with tools and middleware
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent. Look up orders when asked.",
+})
+  .use(tools.function({
+    name: "lookup_order",
+    description: "Look up an order by ID",
+    schema: z.object({ orderId: z.string() }),
+    execute: async ({ orderId }) => {
+      return { orderId, status: "shipped", eta: "2026-04-10" }
+    },
+  }))
+  .use(guard.budget({ limit: 1.00 }))
+  .use(observe.log())
+  .use(auditLog)
+
+// 3. Run a multi-turn conversation
+await agent.init()
+const session = agent.session()
+
+const r1 = await session.run("Where is order #ABC-123?").result
+console.log(r1.text)
+// The agent calls lookup_order, then responds with shipping status.
+
+const r2 = await session.run("When will it arrive?").result
+console.log(r2.text)
+// The agent remembers the prior context and answers with the ETA.
+
+// 4. Access metadata from state
+console.log(r2.state["observe:usage"])    // { inputTokens: ..., outputTokens: ... }
+console.log(r2.state["observe:tools"])    // [{ name: "lookup_order", ... }]
+console.log(r2.state["observe:duration"]) // { durationMs: ... }
+
+await session.close()
+await agent.dispose()
+```
+
+The mental model is straightforward: an **Agent** holds configuration and middleware, a **Session** holds conversation state, and **Middleware** intercepts at whichever lifecycle level makes sense -- from the outermost agent lifetime down to individual tool calls.
+
+For details on built-in middleware, see the [Built-in Middleware guide](/guides/builtins/). For the full API surface, see the [Reference](/reference/middleware/).

@@ -58,6 +58,8 @@ export {
   ToolExecutionError,
   SessionClosedError,
   SessionBusyError,
+  StructuredOutputParseError,
+  StructuredOutputValidationError,
 } from "./errors.js"
 
 // Tools namespace

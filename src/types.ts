@@ -228,14 +228,14 @@ export interface RunResult {
  */
 export type StreamEvent =
   | { type: "session:start"; sessionId: string }
-  | { type: "session:end"; result: RunResult }
+  | { type: "session:end"; sessionId: string; result: RunResult }
   | { type: "turn:start"; turnIndex: number; turnId: string }
-  | { type: "turn:end"; text: string }
+  | { type: "turn:end"; turnIndex: number; turnId: string; text: string }
   | { type: "model:start"; model: string; callIndex: number }
-  | { type: "model:chunk"; text: string }
-  | { type: "model:end"; finishReason: string }
+  | { type: "model:chunk"; callIndex: number; text: string }
+  | { type: "model:end"; callIndex: number; finishReason: string }
   | { type: "tool:start"; tool: string; args: Record<string, unknown>; callId: string }
-  | { type: "tool:end"; tool: string; result: unknown }
+  | { type: "tool:end"; tool: string; callId: string; result: unknown }
   | { type: "error"; error: Error }
 
 // ─── State Schema ──────────────────────────────────────

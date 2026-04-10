@@ -1,0 +1,50 @@
+---
+title: Memory
+description: "Memory middleware: context window compaction with 5 strategies."
+---
+
+Memory management middleware. Prevent context window overflow by compacting conversation history with 5 built-in strategies.
+
+## memory.compaction()
+
+Automatically compacts messages when the token count exceeds a configured limit. Only modifies `ModelContext.messages` -- `SessionContext.history` is never touched.
+
+```typescript
+function memoryCompaction(config?: CompactionConfig): Middleware
+```
+
+```typescript
+// Simple truncation (default, zero cost)
+agent.use(memory.compaction({ maxTokens: 8192 }))
+
+// Hybrid: summarize old + keep recent verbatim (best quality)
+agent.use(memory.compaction({
+  maxTokens: 8192,
+  strategy: "hybrid",
+  summaryModel: mySummaryModel, // LanguageModelV3 instance
+  keepRecentMessages: 10,
+}))
+```
+
+**Hooks:** `model` -- checks token count and compacts before `next()`.
+
+**Five strategies** (gentlest to most aggressive):
+
+| Strategy | Description | Cost |
+|----------|-------------|------|
+| `clear-tool-results` | Replace old tool results with placeholders | Free |
+| `truncate` (default) | Drop oldest messages | Free |
+| `window` | Keep last N messages | Free |
+| `summarize` | LLM summarizes old messages | 1 LLM call |
+| `hybrid` | Summarize old + keep recent verbatim | 1 LLM call |
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxTokens` | `number` | `8192` | Token limit for context window |
+| `strategy` | `CompactionStrategy` | `"truncate"` | Compaction strategy |
+| `keepLast` | `number` | `20` | For `window`: keep last N messages |
+| `keepLastToolResults` | `number` | `3` | For `clear-tool-results`: keep N recent results |
+| `keepRecentMessages` | `number` | `10` | For `summarize`/`hybrid`: keep N recent messages |
+| `summaryModel` | `LanguageModelV3` | -- | For `summarize`/`hybrid`: model for summaries |
+| `tokenCounter` | `TokenCounter` | chars/4 | Token estimation function |

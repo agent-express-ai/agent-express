@@ -1,0 +1,201 @@
+---
+title: Templates
+description: "Four project templates for create-agent-express: default, coding, research, and support-bot."
+---
+
+`create-agent-express` ships with four templates that scaffold ready-to-run agent projects. Each template includes an agent definition, tests, TypeScript configuration, and environment setup.
+
+## Usage
+
+```bash
+# Use a specific template
+npx create-agent-express --template <name>
+
+# Use the default template with zero prompts
+npx create-agent-express --default
+
+# AI-powered scaffold (describes your agent, generates code)
+npx create-agent-express "a customer support bot for an e-commerce store"
+```
+
+All templates share the same project structure:
+
+```
+src/agent.ts              -- Agent definition with middleware and tools
+tests/agent.agent.test.ts -- Tests using TestModel (no API key needed)
+package.json              -- Scripts: dev, test
+tsconfig.json             -- TypeScript configuration (ESM, strict)
+.env.example              -- API key placeholder
+CLAUDE.md                 -- API reference for AI-assisted development
+AGENTS.md                 -- Agent architecture documentation
+```
+
+---
+
+## Default
+
+A minimal starter agent with a single tool. Good for learning the framework or starting a new project from scratch.
+
+```bash
+npx create-agent-express --template default
+```
+
+**What's included:**
+- Agent named `"assistant"` with `anthropic/claude-sonnet-4-6`
+- One example tool: `get_weather` with Zod schema validation
+- System instructions: "You are a helpful assistant. Answer questions clearly and concisely."
+- Default middleware auto-applied (retry, usage tracking, tools observation, duration, maxIterations)
+- Test file with three tests using `TestModel` and `testAgent()`
+
+**Middleware used:**
+- `tools.function()` -- registers the `get_weather` tool
+- Defaults (auto-applied): `model.retry()`, `observe.usage()`, `observe.tools()`, `observe.duration()`, `guard.maxIterations()`
+
+**Agent code:**
+
+```typescript
+import { Agent, tools } from "agent-express"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant. Answer questions clearly and concisely.",
+})
+
+agent.use(
+  tools.function({
+    name: "get_weather",
+    description: "Get current weather for a city",
+    schema: z.object({
+      city: z.string().describe("City name, e.g. 'San Francisco'"),
+    }),
+    execute: async ({ city }) => {
+      const conditions = ["Sunny", "Cloudy", "Rainy", "Partly cloudy"]
+      const temp = Math.floor(Math.random() * 30) + 10
+      const condition = conditions[Math.floor(Math.random() * conditions.length)]
+      return { city, temperature: `${temp}C`, condition }
+    },
+  }),
+)
+
+export default agent
+```
+
+---
+
+## Coding
+
+A coding assistant with file system tools and safety guardrails. Demonstrates tool approval, budget limits, and the dev console.
+
+```bash
+npx create-agent-express --template coding
+```
+
+**What's included:**
+- Agent named `"coding"` with `anthropic/claude-sonnet-4-6`
+- Three tools: `read_file`, `write_file` (requires approval), `list_dir`
+- System instructions covering file reading, writing, and code style guidelines
+- Approval gate that blocks writes to sensitive system paths (`/etc`, `/usr`, `/System`, etc.)
+- Budget cap at $0.50 per session
+- Dev console for terminal tracing
+
+**Middleware used:**
+- `tools.function()` -- three file system tools
+- `guard.approve()` -- human-in-the-loop approval for `write_file` with path-based deny rules
+- `guard.budget({ limit: 0.50 })` -- cost cap
+- `dev.console()` -- lifecycle terminal trace
+- Defaults (auto-applied): `model.retry()`, `observe.usage()`, `observe.tools()`, `observe.duration()`, `guard.maxIterations()`
+
+**Key patterns demonstrated:**
+- `requireApproval: true` on the `write_file` tool definition
+- Path-based deny rules in the approval function
+- `approve()` and `deny()` helper functions
+
+---
+
+## Research
+
+A research agent with web search, report saving, model routing, and output guardrails. Demonstrates cost optimization and PII redaction.
+
+```bash
+npx create-agent-express --template research
+```
+
+**What's included:**
+- Agent named `"research"` with `anthropic/claude-sonnet-4-6`
+- Two tools: `web_search` (fake results for demo) and `save_report`
+- System instructions with a 4-step workflow: break down question, search, synthesize, save
+- Model router that uses cheaper models for simple queries
+- Output guard that redacts email addresses and phone numbers
+- Turn timeout at 30 seconds
+
+**Middleware used:**
+- `tools.function()` -- search and report saving tools
+- `model.router()` -- routes simple queries to `claude-haiku-3-5`, medium/complex to `claude-sonnet-4-6`
+- `guard.output()` -- PII redaction (email and phone patterns)
+- `guard.timeout({ turn: 30_000 })` -- turn time limit
+- Defaults (auto-applied): `model.retry()`, `observe.usage()`, `observe.tools()`, `observe.duration()`, `guard.maxIterations()`
+
+**Key patterns demonstrated:**
+- Complexity-based model routing for cost optimization
+- Output validation with text transformation (redaction)
+- Turn-level timeouts
+
+---
+
+## Support-Bot
+
+A production-style customer support bot with order management, refund processing, prompt injection defense, memory compaction, and structured logging. The most complete template.
+
+```bash
+npx create-agent-express --template support-bot
+```
+
+**What's included:**
+- Agent named `"support-bot"` with `anthropic/claude-sonnet-4-6`
+- Two tools: `lookup_order` and `process_refund` (requires approval)
+- Fake order database with three sample orders
+- System instructions for ShopCo e-commerce support
+- Budget guard at $1.00 per session
+- Approval gate: auto-approves refunds under $100, denies larger ones
+- Input guard blocking common prompt injection patterns
+- Memory compaction at 4096 tokens (truncation strategy)
+- Structured JSON logging
+
+**Middleware used:**
+- `tools.function()` -- order lookup and refund processing
+- `guard.budget({ limit: 1.0 })` -- cost cap
+- `guard.approve()` -- conditional approval based on refund amount
+- `guard.input()` -- prompt injection detection
+- `memory.compaction({ maxTokens: 4096 })` -- context window management
+- `observe.log()` -- structured JSON logging to stderr
+- Defaults (auto-applied): `model.retry()`, `observe.usage()`, `observe.tools()`, `observe.duration()`, `guard.maxIterations()`
+
+**Key patterns demonstrated:**
+- Conditional tool approval based on business rules (refund amount threshold)
+- Input validation with pattern matching for prompt injection
+- Memory compaction for long-running support conversations
+- Structured logging for observability pipelines
+- Multiple guard layers working together (budget + approval + input validation)
+
+---
+
+## Running a Template
+
+After scaffolding, set up your project:
+
+```bash
+# Install dependencies
+npm install
+
+# Add your API key
+cp .env.example .env
+# Edit .env and add your ANTHROPIC_API_KEY
+
+# Start the dev REPL
+npm run dev
+
+# Run tests (no API key needed -- uses TestModel)
+npm test
+```
