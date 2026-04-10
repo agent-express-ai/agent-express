@@ -7,7 +7,7 @@ Minimalist middleware framework for building AI agents in TypeScript.
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 
-**[Documentation](https://agent-express.ai)** · **[Getting Started](https://agent-express.ai/getting-started/)** · **[API Reference](https://agent-express.ai/reference/api/)**
+**[Documentation](https://agent-express.ai)** · **[Getting Started](https://agent-express.ai/getting-started/)** · **[API Reference](https://agent-express.ai/reference/api/readme/)**
 
 ## Why agent-express
 
