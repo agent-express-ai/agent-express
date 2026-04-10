@@ -1,6 +1,6 @@
 {
   "name": "create-agent-express",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Create agent-express projects — AI-powered scaffolder that is itself an agent-express agent",
   "type": "module",
   "bin": {

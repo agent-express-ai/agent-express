@@ -17,6 +17,12 @@ export async function scaffoldWithAI(
   const { Agent, tools, guard, approve, deny } = await import("agent-express")
   const { z } = await import("zod")
 
+  // Set API key as env variable so the provider SDK can find it
+  if (config.apiKey) {
+    const envVar = config.provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"
+    process.env[envVar] = config.apiKey
+  }
+
   const filesWritten: string[] = []
 
   const agent = new Agent({
