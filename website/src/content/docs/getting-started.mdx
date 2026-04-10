@@ -101,12 +101,6 @@ Middleware composes in registration order. Each hook wraps the next in an onion 
 The fastest way to start a new project is with `create-agent-express`:
 
 ```bash
-npx create-agent-express "research agent that summarizes papers"
-```
-
-This uses an AI-powered scaffold to generate a project tailored to your description. For offline use, pick from four built-in templates:
-
-```bash
 npx create-agent-express --template default      # minimal starter
 npx create-agent-express --template coding        # coding assistant
 npx create-agent-express --template research      # research agent
@@ -118,6 +112,8 @@ Or skip all prompts with the default template:
 ```bash
 npx create-agent-express --default
 ```
+
+Run without arguments for an interactive wizard that walks you through provider, model, and template selection.
 
 ## Dev Mode
 

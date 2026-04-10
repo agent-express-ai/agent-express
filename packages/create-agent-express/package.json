@@ -1,7 +1,7 @@
 {
   "name": "create-agent-express",
-  "version": "0.1.2",
-  "description": "Create agent-express projects — AI-powered scaffolder that is itself an agent-express agent",
+  "version": "0.1.3",
+  "description": "Create agent-express projects from templates",
   "type": "module",
   "bin": {
     "create-agent-express": "./dist/index.js"
@@ -11,12 +11,8 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.0",
-    "@ai-sdk/openai": "^3.0.0",
     "@clack/prompts": "^1.1.0",
-    "agent-express": "^0.1.0",
-    "commander": "^13.0.0",
-    "open": "^10.0.0"
+    "commander": "^13.0.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

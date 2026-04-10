@@ -209,8 +209,8 @@ agent-express/test  -- TestModel, FunctionModel, testAgent()
 ## CLI
 
 ```bash
-npx create-agent-express "build a support bot"     # AI-powered scaffold
-npx create-agent-express --template support-bot     # static template (offline)
+npx create-agent-express                             # interactive wizard
+npx create-agent-express --template support-bot      # template scaffold
 npx agent-express dev [entry]                       # terminal chat + hot reload
 npx agent-express test                              # agent test runner
 npx agent-express test --ci                         # JUnit XML output for CI

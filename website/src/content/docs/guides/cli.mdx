@@ -7,21 +7,11 @@ Agent Express includes two CLI tools: `create-agent-express` for project scaffol
 
 ## create-agent-express
 
-Scaffold a new Agent Express project from a description or template.
-
-### AI-Powered Scaffold
-
-Describe what you want in natural language. The scaffolder is itself an Agent Express agent (dogfooding).
-
-```bash
-npx create-agent-express "a customer support bot that can look up orders and process refunds"
-```
-
-This requires an API key. If `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) is not set, the CLI opens the provider's key page and prompts you to paste one.
+Scaffold a new Agent Express project from a template.
 
 ### Template Scaffold
 
-Use a pre-built template for offline scaffolding (no API key needed):
+Pick from four pre-built templates:
 
 ```bash
 npx create-agent-express --template support-bot

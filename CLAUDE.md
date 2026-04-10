@@ -138,7 +138,7 @@ src/
 packages/create-agent-express/
 ├── src/
 │   ├── index.ts           # CLI entry point
-│   ├── ai-scaffold.ts    # AI-powered scaffold (dogfood agent)
+│   ├── ai-scaffold.ts    # AI scaffold (disabled, kept for future use)
 │   ├── template-scaffold.ts  # Static template scaffold
 │   ├── browser-auth.ts   # Browser-based auth
 │   └── prompts.ts        # Interactive prompts
@@ -152,8 +152,8 @@ packages/create-agent-express/
 ## CLI Commands
 
 ```
-npx create-agent-express "description"           # AI-powered scaffold (dogfood agent)
-npx create-agent-express --template support-bot  # static template (offline)
+npx create-agent-express                         # interactive wizard
+npx create-agent-express --template support-bot  # template scaffold
 npx create-agent-express --default               # default template, zero prompts
 npx agent-express dev [entry]                    # terminal chat + hot reload
 npx agent-express test                           # agent test runner (blocks real API calls)

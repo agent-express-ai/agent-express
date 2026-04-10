@@ -1,23 +1,20 @@
 # create-agent-express
 
-AI-powered project scaffolder for [agent-express](https://github.com/agent-express/agent-express).
-
-Even our CLI is an agent. Describe what you want — the scaffolder generates it.
+Project scaffolder for [agent-express](https://github.com/agent-express-ai/agent-express).
 
 ## Usage
 
 ```bash
-# AI-powered (needs API key)
-npx create-agent-express "support bot that handles order lookups and refunds"
+# Interactive wizard
+npx create-agent-express
 
-# Static templates (offline, no API key)
+# Pick a template
 npx create-agent-express --template support-bot
 npx create-agent-express --template research
 npx create-agent-express --template coding
-npx create-agent-express --default
 
-# Interactive
-npx create-agent-express
+# Default template, zero prompts
+npx create-agent-express --default
 ```
 
 ## Templates
