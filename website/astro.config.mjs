@@ -12,6 +12,7 @@ export default defineConfig({
       description:
         "Minimalist middleware framework for building AI agents in TypeScript",
       disable404Route: true,
+      routeMiddleware: "./src/routeData.ts",
       components: {
         Header: "./src/components/StarlightHeader.astro",
         Footer: "./src/components/StarlightFooter.astro",
@@ -25,15 +26,7 @@ export default defineConfig({
         },
       },
       customCss: ["./src/styles/custom.css"],
-      head: [
-        {
-          tag: "meta",
-          attrs: {
-            property: "og:image",
-            content: "/og-default.png",
-          },
-        },
-      ],
+      head: [],
       sidebar: [
         { label: "Getting Started", slug: "getting-started" },
         { label: "Concepts", slug: "concepts" },
