@@ -1,6 +1,6 @@
 import * as readline from "node:readline"
 import { resolve, dirname, extname } from "node:path"
-import { watch } from "node:fs"
+import { watch, readFileSync } from "node:fs"
 import { existsSync } from "node:fs"
 
 /**
@@ -13,6 +13,21 @@ import { existsSync } from "node:fs"
  * - Graceful shutdown on Ctrl+C
  */
 export async function runDev(entry: string, _opts: { trace: boolean }): Promise<void> {
+  // Load .env file if present (before loading agent so provider SDKs can read keys)
+  const envPath = resolve(process.cwd(), ".env")
+  if (existsSync(envPath)) {
+    const envContent = readFileSync(envPath, "utf-8")
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith("#")) continue
+      const eqIndex = trimmed.indexOf("=")
+      if (eqIndex === -1) continue
+      const key = trimmed.slice(0, eqIndex).trim()
+      const value = trimmed.slice(eqIndex + 1).trim()
+      if (!process.env[key]) process.env[key] = value
+    }
+  }
+
   const entryPath = resolve(process.cwd(), entry)
 
   // Validate entry path exists and has .ts/.js extension
