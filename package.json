@@ -1,6 +1,6 @@
 {
   "name": "agent-express",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minimalist middleware framework for building AI agents in TypeScript",
   "type": "module",
   "main": "./dist/index.js",
