@@ -1,0 +1,327 @@
+---
+title: HTTP & Web Frameworks
+description: "Stream agent execution as SSE. Embed in Express, Hono, or Fastify."
+---
+
+Agent Express provides a Web-standard `Request -> Response` handler that streams agent execution as Server-Sent Events. Import it from `agent-express/http`:
+
+```typescript
+import { createHandler } from "agent-express/http"
+```
+
+## createHandler()
+
+Creates a handler function with the signature `(req: Request) => Response`. It uses the Web-standard `Request`/`Response` APIs, making it compatible with any framework that supports them.
+
+```typescript
+import { Agent } from "agent-express"
+import { createHandler } from "agent-express/http"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+const handler = createHandler(agent)
+```
+
+### How It Works
+
+1. Accepts a POST request with JSON body `{ input: string }`
+2. Creates a session per request (or reuses one via session ID header)
+3. Runs one turn
+4. Streams `StreamEvent` objects back as SSE (`data: {...}\n\n`)
+5. Closes the session when done
+
+### HandlerOptions
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sessionIdHeader` | `string` | `"x-session-id"` | Header name for session ID |
+| `maxInputLength` | `number` | `100000` | Maximum input string length in characters |
+| `sessionTtlMs` | `number` | `1800000` (30 min) | Idle session TTL — sessions are evicted after this period |
+| `maxSessions` | `number` | `10000` | Maximum concurrent sessions — rejects new sessions when full |
+
+```typescript
+const handler = createHandler(agent, {
+  sessionIdHeader: "x-my-session-id",
+  maxInputLength: 50_000,
+  sessionTtlMs: 60_000,   // 1 minute TTL
+  maxSessions: 1000,
+})
+```
+
+### Validation
+
+The handler validates:
+- HTTP method is POST (returns 405 otherwise)
+- Body has a string `input` field (sends error event otherwise)
+- Session ID matches `[a-zA-Z0-9_-]{1,128}` format (sends error event otherwise)
+
+Error messages sent to clients are generic for security.
+
+## Request & Response Format
+
+### Request Format
+
+```
+POST /api/agent
+Content-Type: application/json
+x-session-id: session-123  (optional)
+
+{ "input": "Hello, how can you help?" }
+```
+
+### SSE Response Format
+
+The response is an SSE stream with `Content-Type: text/event-stream`:
+
+```
+data: {"type":"turn:start","turnIndex":0,"turnId":"abc-123"}
+
+data: {"type":"model:start","model":"anthropic/claude-sonnet-4-6","callIndex":0}
+
+data: {"type":"tool:start","tool":"lookup_order","args":{"orderId":"ORD-123"},"callId":"tc-1"}
+
+data: {"type":"tool:end","tool":"lookup_order","result":{"orderId":"ORD-123","status":"shipped"}}
+
+data: {"type":"model:start","model":"anthropic/claude-sonnet-4-6","callIndex":1}
+
+data: {"type":"model:chunk","text":"Your order ORD-123 has been shipped"}
+
+data: {"type":"model:end","finishReason":"stop"}
+
+data: {"type":"turn:end","text":"Your order ORD-123 has been shipped and should arrive in 2 days."}
+
+data: {"type":"session:end","result":{"text":"...","state":{...}}}
+```
+
+### StreamEvent Types
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `turn:start` | `turnIndex`, `turnId` | Turn begins |
+| `turn:end` | `text` | Turn complete |
+| `model:start` | `model`, `callIndex` | LLM call begins |
+| `model:chunk` | `text` | Streamed text chunk |
+| `model:end` | `finishReason` | LLM call complete |
+| `tool:start` | `tool`, `args`, `callId` | Tool execution begins |
+| `tool:end` | `tool`, `result` | Tool execution complete |
+| `session:end` | `result` | Session complete with full `RunResult` |
+| `error` | `error` | Error occurred |
+
+## Express.js
+
+Use `toExpressHandler()` to convert the Web-standard handler into an Express route handler:
+
+```typescript
+import express from "express"
+import { Agent, tools } from "agent-express"
+import { createHandler, toExpressHandler } from "agent-express/http"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent.",
+})
+  .use(tools.function({
+    name: "lookup_order",
+    description: "Look up an order by ID",
+    schema: z.object({ orderId: z.string() }),
+    execute: async ({ orderId }) => ({ orderId, status: "shipped", eta: "2 days" }),
+  }))
+
+const handler = createHandler(agent)
+const app = express()
+
+app.post("/api/agent", toExpressHandler(handler))
+
+app.listen(3000, () => {
+  console.log("Agent API running on http://localhost:3000")
+})
+```
+
+`toExpressHandler()` handles the conversion between Express `req`/`res` and Web `Request`/`Response` automatically.
+
+### Test With Curl
+
+```bash
+curl -X POST http://localhost:3000/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Where is my order ORD-123?"}' \
+  --no-buffer
+```
+
+## Hono
+
+Hono natively supports Web-standard `Request`/`Response`, making integration minimal.
+
+```typescript
+import { Hono } from "hono"
+import { Agent, tools } from "agent-express"
+import { createHandler } from "agent-express/http"
+import { z } from "zod"
+
+// 1. Create agent
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent.",
+})
+  .use(tools.function({
+    name: "lookup_order",
+    description: "Look up an order by ID",
+    schema: z.object({ orderId: z.string() }),
+    execute: async ({ orderId }) => ({ orderId, status: "shipped", eta: "2 days" }),
+  }))
+
+// 2. Create handler
+const handler = createHandler(agent)
+
+// 3. Mount route
+const app = new Hono()
+
+app.post("/api/agent", (c) => handler(c.req.raw))
+
+// 4. Start server (Node.js)
+import { serve } from "@hono/node-server"
+serve({ fetch: app.fetch, port: 3000 }, () => {
+  console.log("Agent API running on http://localhost:3000")
+})
+```
+
+Since Hono's `c.req.raw` is already a Web `Request`, no conversion is needed. The `handler` returns a Web `Response` that Hono forwards directly.
+
+### Hono On Other Runtimes
+
+The same code works on Cloudflare Workers, Deno, and Bun:
+
+```typescript
+// Cloudflare Workers
+export default app
+
+// Bun
+export default { fetch: app.fetch, port: 3000 }
+
+// Deno
+Deno.serve({ port: 3000 }, app.fetch)
+```
+
+
+## Fastify
+
+Use `toFastifyHandler()` for Fastify integration:
+
+```typescript
+import Fastify from "fastify"
+import { Agent, tools } from "agent-express"
+import { createHandler, toFastifyHandler } from "agent-express/http"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent.",
+})
+  .use(tools.function({
+    name: "lookup_order",
+    description: "Look up an order by ID",
+    schema: z.object({ orderId: z.string() }),
+    execute: async ({ orderId }) => ({ orderId, status: "shipped", eta: "2 days" }),
+  }))
+
+const handler = createHandler(agent)
+const fastify = Fastify()
+
+fastify.post("/api/agent", toFastifyHandler(handler))
+
+fastify.listen({ port: 3000 }, () => {
+  console.log("Agent API running on http://localhost:3000")
+})
+```
+
+## Session Management
+
+By default, `createHandler()` creates a new ephemeral session per request. To maintain multi-turn conversations, pass a session ID via the `x-session-id` header. Sessions are stored in memory — conversation history and state persist across requests. For more on sessions, see [Sessions](/guides/sessions/).
+
+```bash
+# First request: creates session
+curl -X POST http://localhost:3000/api/agent \
+  -H "Content-Type: application/json" \
+  -H "x-session-id: user-42" \
+  -d '{"input": "My name is Alice"}'
+
+# Second request: same session, remembers context
+curl -X POST http://localhost:3000/api/agent \
+  -H "Content-Type: application/json" \
+  -H "x-session-id: user-42" \
+  -d '{"input": "What is my name?"}'
+# Response will include "Alice" — the session remembers
+```
+
+### Session Lifecycle
+
+- **No session ID**: ephemeral session, created and closed per request
+- **With session ID**: persistent session, kept in memory until TTL expires
+- **TTL eviction**: idle sessions are automatically evicted (default 30 min)
+- **Max sessions**: new sessions are rejected when the limit is reached (default 10K)
+
+Session IDs must match `[a-zA-Z0-9_-]{1,128}`.
+
+### Security
+
+Authentication and authorization are **your responsibility**. The handler does not verify session ownership — anyone with a valid session ID can access that session. Use your framework's auth middleware to protect the endpoint:
+
+```typescript
+// Express example with auth
+app.post("/api/agent", authMiddleware, toExpressHandler(handler))
+```
+
+## Client-Side Consumption
+
+### Fetch With Streaming
+
+```typescript
+async function chat(input: string, sessionId?: string) {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  if (sessionId) headers["x-session-id"] = sessionId
+
+  const response = await fetch("/api/agent", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ input }),
+  })
+
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let fullText = ""
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    const chunk = decoder.decode(value)
+    for (const line of chunk.split("\n")) {
+      if (!line.startsWith("data: ")) continue
+      const event = JSON.parse(line.slice(6))
+
+      switch (event.type) {
+        case "model:chunk":
+          fullText += event.text
+          updateUI(fullText) // Render streaming text
+          break
+        case "tool:start":
+          showToolIndicator(event.tool)
+          break
+        case "session:end":
+          onComplete(event.result)
+          break
+      }
+    }
+  }
+}
+```

@@ -1,0 +1,275 @@
+---
+---
+
+<section class="tabs-section">
+  <div class="tabs-inner">
+    <h2 class="section-title">Everything is middleware</h2>
+    <p class="section-subtitle">Every feature above is a <code>(ctx, next)</code> middleware. Same pattern, 6 namespaces. <br/>Or <a href="/guides/middleware/" class="subtitle-link">build your own</a> — same interface, infinite possibilities.</p>
+
+    <div class="tabs-container">
+      <!-- Radio inputs for CSS-only tab switching -->
+      <input type="radio" name="mw-tab" id="tab-guard" class="tab-radio" checked />
+      <input type="radio" name="mw-tab" id="tab-observe" class="tab-radio" />
+      <input type="radio" name="mw-tab" id="tab-model" class="tab-radio" />
+      <input type="radio" name="mw-tab" id="tab-memory" class="tab-radio" />
+      <input type="radio" name="mw-tab" id="tab-tools" class="tab-radio" />
+      <input type="radio" name="mw-tab" id="tab-dev" class="tab-radio" />
+
+      <div class="tab-bar">
+        <label for="tab-guard" class="tab-label">guard</label>
+        <label for="tab-observe" class="tab-label">observe</label>
+        <label for="tab-model" class="tab-label">model</label>
+        <label for="tab-memory" class="tab-label">memory</label>
+        <label for="tab-tools" class="tab-label">tools</label>
+        <label for="tab-dev" class="tab-label">dev</label>
+      </div>
+
+      <div class="tab-panels">
+        <!-- guard panel -->
+        <div class="tab-panel panel-guard">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">budget</span>({'{'} <span class="prop">limit</span>: <span class="num">5</span> {'}'}))     <span class="cmt">// $5 USD cost cap</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">approve</span>({'{'} <span class="prop">tool</span>: <span class="str">"email"</span> {'}'})) <span class="cmt">// require approval</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">timeout</span>({'{'} <span class="prop">turn</span>: <span class="num">30_000</span> {'}'})) <span class="cmt">// 30s timeout</span></code></pre>
+        </div>
+
+        <!-- observe panel -->
+        <div class="tab-panel panel-observe">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">usage</span>())    <span class="cmt">// token tracking → state['observe:usage']</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">tools</span>())    <span class="cmt">// tool call recording</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">duration</span>()) <span class="cmt">// turn timing</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">log</span>())      <span class="cmt">// structured JSON logging</span></code></pre>
+        </div>
+
+        <!-- model panel -->
+        <div class="tab-panel panel-model">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">model</span>.<span class="fn">retry</span>({'{'} <span class="prop">maxRetries</span>: <span class="num">3</span> {'}'}))  <span class="cmt">// exponential backoff</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">model</span>.<span class="fn">router</span>({'{'}                    <span class="cmt">// complexity routing</span>
+  <span class="prop">tiers</span>: [{'{'} <span class="prop">model</span>: <span class="str">"anthropic/claude-haiku-4-5-20251001"</span>, <span class="prop">maxTokens</span>: <span class="num">100</span> {'}'}]
+{'}'}))</code></pre>
+        </div>
+
+        <!-- memory panel -->
+        <div class="tab-panel panel-memory">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">memory</span>.<span class="fn">compaction</span>({'{'}
+  <span class="prop">strategy</span>: <span class="str">"sliding-window"</span>,
+  <span class="prop">maxTokens</span>: <span class="num">8000</span>,
+{'}'}))</code></pre>
+        </div>
+
+        <!-- tools panel -->
+        <div class="tab-panel panel-tools">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">tools</span>.<span class="fn">function</span>({'{'}
+  <span class="prop">name</span>: <span class="str">"get_weather"</span>,
+  <span class="prop">description</span>: <span class="str">"Get weather for a city"</span>,
+  <span class="prop">parameters</span>: <span class="obj">z</span>.<span class="fn">object</span>({'{'} <span class="prop">city</span>: <span class="obj">z</span>.<span class="fn">string</span>() {'}'}),
+  <span class="prop">execute</span>: <span class="kw">async</span> ({'{'} <span class="obj">city</span> {'}'}) => <span class="str">`Weather in ${'{'}city{'}'}: 72°F`</span>,
+{'}'}))</code></pre>
+        </div>
+
+        <!-- dev panel -->
+        <div class="tab-panel panel-dev">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">dev</span>.<span class="fn">console</span>()) <span class="cmt">// full lifecycle terminal trace</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .tabs-section {
+    padding: 0;
+    background: var(--bg, #111827);
+  }
+
+  .tabs-inner {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .section-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text, #f8fafc);
+    text-align: center;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .section-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-muted, #94a3b8);
+    text-align: center;
+    margin: 0 0 2.5rem;
+  }
+
+  .subtitle-link {
+    color: var(--accent, #7c3aed);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .section-subtitle code {
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.12);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.9em;
+  }
+
+  .tabs-container {
+    position: relative;
+  }
+
+  /* Hide radio inputs */
+  .tab-radio {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.375rem;
+    background: #0b1120;
+    border-radius: 10px;
+    margin-bottom: 0;
+    border: 1px solid #1e293b;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: none;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-label {
+    flex: 1;
+    padding: 0.5rem 1rem;
+    text-align: center;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted, #94a3b8);
+    background: transparent;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .tab-label:hover {
+    color: var(--text, #f8fafc);
+    background: rgba(124, 58, 237, 0.08);
+  }
+
+  /* Active tab styles — one rule per radio */
+  #tab-guard:checked ~ .tab-bar .tab-label:nth-child(1),
+  #tab-observe:checked ~ .tab-bar .tab-label:nth-child(2),
+  #tab-model:checked ~ .tab-bar .tab-label:nth-child(3),
+  #tab-memory:checked ~ .tab-bar .tab-label:nth-child(4),
+  #tab-tools:checked ~ .tab-bar .tab-label:nth-child(5),
+  #tab-dev:checked ~ .tab-bar .tab-label:nth-child(6) {
+    background: #7c3aed;
+    color: #f8fafc;
+    font-weight: 600;
+  }
+
+  .tab-panels {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+  }
+
+  .tab-panel {
+    display: none;
+  }
+
+  .tab-panel pre {
+    margin: 0;
+    padding: 1.5rem 2rem;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    background: #011627;
+  }
+
+  .tab-panel code {
+    color: #d6deeb;
+  }
+
+  /* Show active panel — one rule per radio */
+  #tab-guard:checked ~ .tab-panels .panel-guard,
+  #tab-observe:checked ~ .tab-panels .panel-observe,
+  #tab-model:checked ~ .tab-panels .panel-model,
+  #tab-memory:checked ~ .tab-panels .panel-memory,
+  #tab-tools:checked ~ .tab-panels .panel-tools,
+  #tab-dev:checked ~ .tab-panels .panel-dev {
+    display: block;
+  }
+
+  /* Syntax highlighting — Night Owl */
+  .tab-panel .kw {
+    color: #c792ea;
+  }
+
+  .tab-panel .fn {
+    color: #82aaff;
+  }
+
+  .tab-panel .ns {
+    color: #82aaff;
+  }
+
+  .tab-panel .obj {
+    color: #d6deeb;
+  }
+
+  .tab-panel .prop {
+    color: #7fdbca;
+  }
+
+  .tab-panel .str {
+    color: #ecc48d;
+  }
+
+  .tab-panel .num {
+    color: #f78c6c;
+  }
+
+  .tab-panel .cmt {
+    color: #637777;
+    font-style: italic;
+  }
+
+  @media (max-width: 640px) {
+    .tabs-section {
+      padding: 0;
+    }
+
+    .section-title {
+      font-size: 1.375rem;
+    }
+
+    .tab-bar {
+      gap: 0.25rem;
+      padding: 0.25rem;
+    }
+
+    .tab-label {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.7rem;
+    }
+
+    .tab-panel pre {
+      padding: 1rem 1.25rem;
+      font-size: 0.75rem;
+    }
+  }
+</style>

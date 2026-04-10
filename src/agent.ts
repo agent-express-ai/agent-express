@@ -223,7 +223,7 @@ export class Agent {
    * ```
    */
   run(input: string, opts?: RunOptions): AgentRun {
-    const agentRun = new AgentRun()
+    const agentRun = new AgentRun("ephemeral")
 
     this.executeConvenienceRun(input, opts, agentRun).catch((err) => {
       agentRun.fail(err instanceof Error ? err : new Error(String(err)))

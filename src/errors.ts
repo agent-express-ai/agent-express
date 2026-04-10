@@ -190,3 +190,27 @@ export class SessionBusyError extends AgentExpressError {
     this.sessionId = sessionId
   }
 }
+
+/** Thrown when the model returns text that is not valid JSON for structured output. */
+export class StructuredOutputParseError extends AgentExpressError {
+  /** The raw text the model returned. */
+  readonly rawText: string
+
+  constructor(rawText: string) {
+    super(`Structured output: model returned invalid JSON`, "STRUCTURED_OUTPUT_PARSE", false)
+    this.name = "StructuredOutputParseError"
+    this.rawText = rawText.slice(0, 500)
+  }
+}
+
+/** Thrown when the parsed JSON does not match the expected Zod schema. */
+export class StructuredOutputValidationError extends AgentExpressError {
+  /** Zod validation issues. */
+  readonly issues: unknown[]
+
+  constructor(issues: unknown[]) {
+    super(`Structured output validation failed: ${JSON.stringify(issues)}`, "STRUCTURED_OUTPUT_VALIDATION", false)
+    this.name = "StructuredOutputValidationError"
+    this.issues = issues
+  }
+}

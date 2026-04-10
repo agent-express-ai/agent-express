@@ -1,0 +1,271 @@
+---
+title: Streaming
+description: "Stream agent responses in real time. AgentRun, StreamEvent types, and consumption patterns."
+---
+
+Agent Express streams responses in real time via `StreamEvent` objects. Every `agent.run()` and `session.run()` returns an `AgentRun` — a dual interface that supports both streaming and awaiting the final result.
+
+## Consuming a Stream
+
+`AgentRun` implements `AsyncIterable<StreamEvent>`. Use `for await` to process events as they arrive:
+
+```typescript
+const run = agent.run("Hello")
+
+for await (const event of run) {
+  switch (event.type) {
+    case "model:chunk":
+      process.stdout.write(event.text)
+      break
+    case "tool:start":
+      console.log(`Calling ${event.tool}...`)
+      break
+    case "error":
+      console.error(event.error)
+      break
+  }
+}
+
+// Or: await the final result directly
+const result = await run.result
+```
+
+Both interfaces can be used on the same `AgentRun` instance. The `.result` promise resolves when the session completes, after all events have been emitted.
+
+---
+
+## AgentRun
+
+The return value of `agent.run()` and `session.run()`. Dual interface inspired by `fetch()`.
+
+```typescript
+class AgentRun implements AsyncIterable<StreamEvent> {
+  /** Promise resolving to the final RunResult when the session completes. */
+  readonly result: Promise<RunResult>
+
+  /** Async iterator yielding StreamEvents as they arrive. */
+  [Symbol.asyncIterator](): AsyncIterator<StreamEvent>
+}
+```
+
+Internally, `AgentRun` uses an `EventBus` that buffers events in memory. If a consumer is already waiting, events are delivered immediately. When the run completes, the iterator drains remaining buffered events and then returns.
+
+The `EventBus` is **single-consumer only** -- each `AgentRun` is designed for one `for await` loop at a time. Multiple consumers on the same run will miss events.
+
+---
+
+## StreamEvent Types
+
+`StreamEvent` is a discriminated union on the `type` field. Events follow the lifecycle nesting: session > turn > model/tool.
+
+### session:start
+
+Emitted when a session begins.
+
+```typescript
+{ type: "session:start"; sessionId: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `sessionId` | `string` | Unique session identifier. |
+
+---
+
+### session:end
+
+Emitted when a session completes successfully. This is the last event before the iterator closes.
+
+```typescript
+{ type: "session:end"; sessionId: string; result: RunResult }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `sessionId` | `string` | Session identifier. |
+| `result` | `RunResult` | Final result with `text`, `state`, and optional `data`. |
+
+---
+
+### turn:start
+
+Emitted when a new turn begins (one user message > assistant response cycle).
+
+```typescript
+{ type: "turn:start"; turnIndex: number; turnId: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `turnIndex` | `number` | Turn number within this session (0-based). |
+| `turnId` | `string` | Unique turn identifier. |
+
+---
+
+### turn:end
+
+Emitted when a turn completes.
+
+```typescript
+{ type: "turn:end"; turnIndex: number; turnId: string; text: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `turnIndex` | `number` | Turn number (0-based). |
+| `turnId` | `string` | Unique turn identifier. |
+| `text` | `string` | The assistant's final text output for this turn. |
+
+---
+
+### model:start
+
+Emitted before each LLM call.
+
+```typescript
+{ type: "model:start"; model: string; callIndex: number }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `model` | `string` | Model identifier (e.g., `"anthropic/claude-sonnet-4-6"`). |
+| `callIndex` | `number` | Which model call in this turn (0-based). A turn with tool use will have multiple model calls. |
+
+---
+
+### model:chunk
+
+Emitted for each text chunk during streaming. Use this for real-time text display.
+
+```typescript
+{ type: "model:chunk"; callIndex: number; text: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `callIndex` | `number` | Which model call in this turn (0-based). |
+| `text` | `string` | Text chunk from the model. |
+
+---
+
+### model:end
+
+Emitted when an LLM call completes.
+
+```typescript
+{ type: "model:end"; callIndex: number; finishReason: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `callIndex` | `number` | Which model call in this turn (0-based). |
+| `finishReason` | `string` | Why the model stopped: `"stop"`, `"tool-calls"`, `"length"`, `"content-filter"`, `"error"`, `"other"`. |
+
+---
+
+### tool:start
+
+Emitted before a tool executes.
+
+```typescript
+{ type: "tool:start"; tool: string; args: Record<string, unknown>; callId: string }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `tool` | `string` | Tool name. |
+| `args` | `Record<string, unknown>` | Arguments the model passed to the tool. |
+| `callId` | `string` | Tool call ID linking this call to its result. |
+
+---
+
+### tool:end
+
+Emitted when a tool execution completes.
+
+```typescript
+{ type: "tool:end"; tool: string; callId: string; result: unknown }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `tool` | `string` | Tool name. |
+| `callId` | `string` | Tool call ID linking to the original tool:start. |
+| `result` | `unknown` | Value returned by the tool (or error message if it failed). |
+
+---
+
+### error
+
+Emitted when an unhandled error occurs. This is the last event before the iterator closes on failure.
+
+```typescript
+{ type: "error"; error: Error }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `error` | `Error` | The error that caused the failure. Typically an [`AgentExpressError`](/guides/errors/) subclass. |
+
+---
+
+## Event Lifecycle
+
+A typical single-turn run with one tool call produces this event sequence:
+
+```
+session:start    { sessionId: "s-abc123" }
+turn:start       { turnIndex: 0, turnId: "t-def456" }
+model:start      { model: "anthropic/claude-sonnet-4-6", callIndex: 0 }
+model:chunk      { callIndex: 0, text: "Let me " }
+model:chunk      { callIndex: 0, text: "check that..." }
+model:end        { callIndex: 0, finishReason: "tool-calls" }
+tool:start       { tool: "get_weather", args: { city: "Paris" }, callId: "tc-1" }
+tool:end         { tool: "get_weather", callId: "tc-1", result: { temperature: "22C" } }
+model:start      { model: "anthropic/claude-sonnet-4-6", callIndex: 1 }
+model:chunk      { callIndex: 1, text: "The weather " }
+model:chunk      { callIndex: 1, text: "in Paris is 22C." }
+model:end        { callIndex: 1, finishReason: "stop" }
+turn:end         { turnIndex: 0, turnId: "t-def456", text: "The weather in Paris is 22C." }
+session:end      { sessionId: "s-abc123", result: { text: "...", state: {...} } }
+```
+
+---
+
+## Filtering Events
+
+A common pattern is filtering for specific event types:
+
+```typescript
+const run = agent.run("What's the weather?")
+
+for await (const event of run) {
+  // Real-time text streaming
+  if (event.type === "model:chunk") {
+    process.stdout.write(event.text)
+  }
+
+  // Track tool usage
+  if (event.type === "tool:start") {
+    console.log(`[tool] ${event.tool}(${JSON.stringify(event.args)})`)
+  }
+
+  // Handle errors
+  if (event.type === "error") {
+    console.error(`Run failed: ${event.error.message}`)
+  }
+}
+```
+
+---
+
+## SSE Streaming
+
+For HTTP streaming, use [`createHandler()`](/guides/http-sse/) from `agent-express/http` to convert events to Server-Sent Events. See [HTTP & Web Frameworks](/guides/http-sse/) for full framework integration examples.
+
+```typescript
+import { createHandler } from "agent-express/http"
+
+const handler = createHandler(agent)
+// Produces SSE with each StreamEvent as a JSON data frame
+```

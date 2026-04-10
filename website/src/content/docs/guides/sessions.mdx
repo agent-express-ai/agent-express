@@ -1,0 +1,301 @@
+---
+title: Sessions
+description: "Multi-turn conversations, session state, and streaming events."
+---
+
+A `Session` is a first-class conversation container that holds history and state across multiple turns. Created by `agent.session()`, it provides sequential turn execution with streaming support.
+
+## Creating a Session
+
+```typescript
+import { Agent } from "agent-express"
+
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+await agent.init()
+const session = agent.session()
+```
+
+### Session Options
+
+Pass a custom ID for persistence or tracking:
+
+```typescript
+const session = agent.session({ id: "user-42-thread-7" })
+console.log(session.id) // "user-42-thread-7"
+```
+
+If no ID is provided, a UUID is auto-generated.
+
+## Running Turns
+
+Each call to `session.run(input)` executes one conversational turn. It returns an `AgentRun` with a dual interface:
+
+```typescript
+// Await the result
+const { text, state, data } = await session.run("Hello!").result
+
+// Or stream events
+const run = session.run("Hello!")
+for await (const event of run) {
+  if (event.type === "model:chunk") {
+    process.stdout.write(event.text)
+  }
+}
+const result = await run.result
+```
+
+### Sequential Turns
+
+Turns execute sequentially within a session. Call `run()` after the previous turn completes:
+
+```typescript
+const r1 = await session.run("My name is Alice").result
+const r2 = await session.run("What is my name?").result
+// r2.text contains "Alice" -- the session remembers
+```
+
+Calling `run()` while a turn is in progress throws [`SessionBusyError`](/guides/errors/).
+
+### Closing a Session
+
+Always close the session when done. This triggers session-level middleware cleanup:
+
+```typescript
+await session.close()
+```
+
+Closing is idempotent -- safe to call multiple times. Calling `run()` after `close()` throws [`SessionClosedError`](/guides/errors/).
+
+### Async Disposal
+
+Sessions support `Symbol.asyncDispose` for automatic cleanup:
+
+```typescript
+await using session = agent.session()
+const { text } = await session.run("Hello").result
+// session.close() called automatically
+```
+
+## Conversation History
+
+The session maintains a flat, chronological conversation history that auto-accumulates across turns:
+
+```typescript
+const session = agent.session()
+await session.run("Hello").result
+await session.run("How are you?").result
+
+console.log(session.history.length)
+// 4 messages: user, assistant, user, assistant
+
+for (const msg of session.history) {
+  const content = typeof msg.content === "string"
+    ? msg.content
+    : JSON.stringify(msg.content)
+  console.log(`[${msg.role}] ${content}`)
+}
+```
+
+Each `Message` has a `role` (`"system"`, `"user"`, `"assistant"`, `"tool"`) and `content` (string or `MessagePart[]` for tool calls/results).
+
+## Session State
+
+Session state is a key-value store shared across all turns. Middleware declares state fields with defaults and optional reducers.
+
+### How State Works
+
+State fields are declared by middleware via the `state` property:
+
+```typescript
+const myMiddleware: Middleware = {
+  name: "my-middleware",
+  state: {
+    "my:counter": {
+      default: 0,
+      reducer: (prev, delta) => prev + delta,
+    },
+    "my:log": {
+      default: [],
+      reducer: (prev, delta) => [...prev, ...delta],
+    },
+    "my:flag": {
+      default: false,
+      // No reducer: last-write-wins
+    },
+  },
+  // ...
+}
+```
+
+### StateFieldDef
+
+Each field declaration has:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `default` | `T` | Default value (type is inferred) |
+| `reducer` | `(prev: T, delta: T) => T` | Optional merge function |
+
+### Reducer Semantics
+
+When a reducer is provided, writes dispatch through it instead of replacing the value:
+
+```typescript
+// With reducer: (prev, delta) => prev + delta
+ctx.state["my:counter"] = 5   // 0 + 5 = 5
+ctx.state["my:counter"] = 3   // 5 + 3 = 8
+
+// Without reducer: last-write-wins
+ctx.state["my:flag"] = true    // true
+ctx.state["my:flag"] = false   // false
+```
+
+The Proxy-based implementation intercepts writes and routes them through the reducer transparently.
+
+### Reading State
+
+State is accessible via:
+- `ctx.state` in any hook at session level or deeper
+- `session.state` on the Session instance
+- `result.state` in the `RunResult` after a turn completes
+
+```typescript
+const result = await session.run("Hello").result
+
+// Well-known state keys from built-in middleware:
+const usage = result.state["observe:usage"]     // { inputTokens, outputTokens }
+const tools = result.state["observe:tools"]     // ToolCallRecord[]
+const duration = result.state["observe:duration"] // number (ms)
+const cost = result.state["guard:budget:totalCost"] // number (USD)
+```
+
+## Streaming Events
+
+`session.run()` returns an `AgentRun` that implements `AsyncIterable<StreamEvent>`. For the complete event type reference, see [Streaming](/guides/events/). Iterate to receive events as they happen:
+
+```typescript
+const run = session.run("Tell me a story")
+
+for await (const event of run) {
+  switch (event.type) {
+    case "turn:start":
+      console.log(`Turn #${event.turnIndex} started`)
+      break
+    case "model:start":
+      console.log(`Calling ${event.model}`)
+      break
+    case "model:chunk":
+      process.stdout.write(event.text)
+      break
+    case "model:end":
+      console.log(`\nFinish: ${event.finishReason}`)
+      break
+    case "tool:start":
+      console.log(`Tool: ${event.tool}(${JSON.stringify(event.args)})`)
+      break
+    case "tool:end":
+      console.log(`Result: ${JSON.stringify(event.result)}`)
+      break
+    case "turn:end":
+      console.log(`Turn complete: ${event.text.slice(0, 100)}`)
+      break
+    case "session:end":
+      console.log(`Session done.`)
+      break
+    case "error":
+      console.error(`Error: ${event.error.message}`)
+      break
+  }
+}
+```
+
+### StreamEvent Types
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `session:start` | `sessionId` | Session begins |
+| `session:end` | `result: RunResult` | Session complete |
+| `turn:start` | `turnIndex`, `turnId` | Turn begins |
+| `turn:end` | `text` | Turn complete |
+| `model:start` | `model`, `callIndex` | LLM call begins |
+| `model:chunk` | `text` | Streamed text chunk |
+| `model:end` | `finishReason` | LLM call complete |
+| `tool:start` | `tool`, `args`, `callId` | Tool execution begins |
+| `tool:end` | `tool`, `result` | Tool execution complete |
+| `error` | `error: Error` | Error occurred |
+
+### Dual Interface
+
+Both streaming and awaiting work on the same `AgentRun` instance:
+
+```typescript
+const run = session.run("Hello")
+
+// Stream and await are not mutually exclusive
+for await (const event of run) {
+  // Process events as they arrive
+}
+
+// .result resolves after all events
+const result = await run.result
+```
+
+## Convenience: `agent.run()`
+
+For single-turn use cases, `agent.run()` handles the full lifecycle -- init, session, run, close:
+
+```typescript
+const agent = new Agent({
+  name: "assistant",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful assistant.",
+})
+
+const { text } = await agent.run("Hello!").result
+```
+
+This is equivalent to:
+
+```typescript
+await agent.init()
+const session = agent.session()
+const { text } = await session.run("Hello!").result
+await session.close()
+await agent.dispose()
+```
+
+## Agent Lifecycle
+
+The full lifecycle with sessions:
+
+```typescript
+const agent = new Agent({ name: "assistant", model: "anthropic/claude-sonnet-4-6", instructions: "..." })
+
+await agent.init()       // Connect MCP servers, register tools
+
+const s1 = agent.session()
+await s1.run("Hi").result
+await s1.run("Follow up").result
+await s1.close()         // Trigger session-level cleanup
+
+const s2 = agent.session()
+await s2.run("New conversation").result
+await s2.close()
+
+await agent.dispose()    // Disconnect MCP servers, cleanup
+```
+
+The agent supports `Symbol.asyncDispose` too:
+
+```typescript
+await using agent = new Agent({ ... })
+await agent.init()
+// agent.dispose() called automatically when scope exits
+```
+
+`agent.dispose()` also auto-closes any open sessions.

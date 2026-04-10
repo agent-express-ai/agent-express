@@ -85,11 +85,11 @@ export async function runAgentLoop(
             )
           }),
         ])
-        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, result })
+        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, callId: ctx.callId, result })
         return { callId: ctx.callId, result }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
-        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, result: null })
+        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, callId: ctx.callId, result: null })
         return { callId: ctx.callId, result: `Error: ${error.message}`, isError: true }
       } finally {
         if (timer !== undefined) clearTimeout(timer)
@@ -108,7 +108,7 @@ export async function runAgentLoop(
     const response = await modelOnion(modelCtx)
     callIndex++
 
-    turnCtx.emit({ type: "model:end", finishReason: response.finishReason })
+    turnCtx.emit({ type: "model:end", callIndex: callIndex - 1, finishReason: response.finishReason })
 
     // If no tool calls → turn is complete (text may be empty if iteration limit reached)
     if (!response.toolCalls || response.toolCalls.length === 0) {

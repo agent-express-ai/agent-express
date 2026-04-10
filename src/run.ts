@@ -32,8 +32,10 @@ export class AgentRun implements AsyncIterable<StreamEvent> {
 
   private _resolveResult!: (result: RunResult) => void
   private _rejectResult!: (error: Error) => void
+  private sessionId: string
 
-  constructor() {
+  constructor(sessionId: string) {
+    this.sessionId = sessionId
     this.bus = new EventBus()
     this.result = new Promise<RunResult>((resolve, reject) => {
       this._resolveResult = resolve
@@ -51,7 +53,7 @@ export class AgentRun implements AsyncIterable<StreamEvent> {
    * and resolves the `.result` promise.
    */
   complete(result: RunResult): void {
-    this.bus.emit({ type: "session:end", result })
+    this.bus.emit({ type: "session:end", sessionId: this.sessionId, result })
     this.bus.close()
     this._resolveResult(result)
   }

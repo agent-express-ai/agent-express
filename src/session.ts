@@ -5,9 +5,11 @@ import { AgentRun } from "./run.js"
 import { composeHooks } from "./executor.js"
 import { createSessionContext, createTurnContext } from "./context.js"
 import { runAgentLoop } from "./loop.js"
-import { SessionClosedError, SessionBusyError } from "./errors.js"
+import { SessionClosedError, SessionBusyError, StructuredOutputParseError, StructuredOutputValidationError } from "./errors.js"
 import type { EventBus } from "./events.js"
 import type { LanguageModelV3 } from "@ai-sdk/provider"
+import { zodToJsonSchema } from "./tools/zod-to-json.js"
+import { callLanguageModel } from "./providers/adapter.js"
 import { snapshotState } from "./state.js"
 
 /** Symbol.asyncDispose polyfill for Node.js 20 */
@@ -112,7 +114,7 @@ export class Session {
     if (this.closed) throw new SessionClosedError(this.id)
     if (this.turnInProgress) throw new SessionBusyError(this.id)
 
-    const agentRun = new AgentRun()
+    const agentRun = new AgentRun(this.id)
     this.turnInProgress = true
 
     this.executeTurn(input, opts, agentRun)
@@ -177,13 +179,25 @@ export class Session {
         (t, i, arr) => arr.findIndex((x) => x.name === t.name) === i,
       )
 
+      // If structured output requested, build responseFormat and inject system instruction
+      let callModel = this.internals.callModel
+      if (opts?.output) {
+        const jsonSchema = zodToJsonSchema(opts.output)
+        const responseFormat = { type: "json" as const, schema: jsonSchema, name: "response" }
+        callModel = async (ctx: ModelContext) => {
+          // Inject JSON format instruction into system prompt
+          ctx.addSystemMessage(`Respond with valid JSON matching this schema: ${JSON.stringify(jsonSchema)}. Do not include markdown code fences or any text outside the JSON object.`)
+          return callLanguageModel(this.internals.resolvedModel!, ctx, responseFormat)
+        }
+      }
+
       const loopResult = await runAgentLoop(
         turnCtx,
         this.internals.resolvedModel,
         this.internals.modelId,
         uniqueTools,
         this.internals.middlewares,
-        this.internals.callModel,
+        callModel,
       )
 
       turnText = loopResult.text
@@ -196,13 +210,13 @@ export class Session {
         try {
           parsed = JSON.parse(loopResult.text)
         } catch {
-          throw new Error(`Structured output: model returned invalid JSON. Text: "${loopResult.text.slice(0, 200)}"`)
+          throw new StructuredOutputParseError(loopResult.text)
         }
         const validation = opts.output.safeParse(parsed)
         if (validation.success) {
           turnData = validation.data
         } else {
-          throw new Error(`Structured output validation failed: ${JSON.stringify(validation.error.issues)}`)
+          throw new StructuredOutputValidationError(validation.error.issues)
         }
       }
     }
@@ -212,7 +226,7 @@ export class Session {
 
     // After onion completes (all middleware after-next has run), snapshot state and complete
     this.turnInProgress = false
-    agentRun.emit({ type: "turn:end", text: turnText })
+    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: turnText })
 
     const result: RunResult = {
       text: turnText,

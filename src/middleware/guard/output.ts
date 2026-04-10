@@ -18,13 +18,11 @@ export class OutputGuardrailError extends AgentExpressError {
  * Result of an output validation function.
  */
 export interface OutputValidationResult {
-  /** Whether the output passed validation. */
+  /** Whether the output passed validation. `false` blocks the response. */
   ok: boolean
-  /** Block this response entirely (replace with fallback or throw). */
-  blocked?: boolean
-  /** Reason for blocking. */
+  /** Reason for blocking (when `ok` is `false`). */
   reason?: string
-  /** Modified output text (redaction, transformation). */
+  /** Modified output text (redaction, transformation). Only used when `ok` is `true`. */
   output?: string
 }
 
@@ -41,7 +39,7 @@ export interface OutputGuardConfig {
   /** Validation function. */
   validate: OutputValidator
   /**
-   * What to do when the validator blocks a response.
+   * What to do when the validator blocks a response (`ok: false`).
    * - `"replace"` (default): strip tool calls, return reason as text
    * - `"error"`: throw `OutputGuardrailError`
    */
@@ -56,10 +54,10 @@ export interface OutputGuardConfig {
  *
  * @example
  * ```typescript
- * // Shorthand — blocks replace by default
+ * // Shorthand — blocked responses are replaced by default
  * agent.use(guard.output(async (response, ctx) => {
  *   if (response.toolCalls?.some(tc => tc.toolName === "delete_all")) {
- *     return { blocked: true, reason: "Dangerous tool call blocked" }
+ *     return { ok: false, reason: "Dangerous tool call blocked" }
  *   }
  *   return { ok: true }
  * }))
@@ -82,27 +80,24 @@ export function outputGuard(validatorOrConfig: OutputValidator | OutputGuardConf
       const response = await next()
       const result = await validate(response, ctx)
 
-      if (result.ok && !result.blocked && !result.output) {
+      // Passed — return as-is or with modified output
+      if (result.ok) {
+        if (result.output !== undefined) {
+          return { ...response, text: result.output }
+        }
         return response
       }
 
-      if (result.blocked) {
-        const reason = result.reason ?? "Response blocked by output guard"
-        if (onBlock === "error") {
-          throw new OutputGuardrailError(reason)
-        }
-        return {
-          text: reason,
-          usage: response.usage,
-          finishReason: "stop",
-        }
+      // Blocked (ok: false)
+      const reason = result.reason ?? "Response blocked by output guard"
+      if (onBlock === "error") {
+        throw new OutputGuardrailError(reason)
       }
-
-      if (result.output !== undefined) {
-        return { ...response, text: result.output }
+      return {
+        text: reason,
+        usage: response.usage,
+        finishReason: "stop",
       }
-
-      return response
     },
   }
 }

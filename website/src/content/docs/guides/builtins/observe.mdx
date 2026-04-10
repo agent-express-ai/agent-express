@@ -1,0 +1,117 @@
+---
+title: Observability
+description: "Observability middleware: token usage, tool calls, duration, structured logging."
+---
+
+Observability and telemetry middleware. Track token usage, record tool calls, measure duration, and emit structured logs.
+
+## observe.usage()
+
+Tracks cumulative token usage across all model calls in a session.
+
+```typescript
+function observeUsage(): Middleware
+```
+
+```typescript
+agent.use(observe.usage())
+
+const result = await agent.run("Hello").result
+const usage = result.state["observe:usage"]
+// { inputTokens: 150, outputTokens: 85 }
+```
+
+**Hooks:** `model` -- reads `response.usage` after `next()`.
+
+**State keys:**
+- `observe:usage` -- `{ inputTokens: number, outputTokens: number }` (reducer: sum)
+
+---
+
+## observe.tools()
+
+Records every tool execution including arguments, results, duration, and errors.
+
+```typescript
+function observeTools(): Middleware
+```
+
+```typescript
+agent.use(observe.tools())
+
+const result = await agent.run("Search for cats").result
+const calls = result.state["observe:tools"] as ToolCallRecord[]
+for (const call of calls) {
+  console.log(`${call.name}: ${call.duration}ms`)
+}
+```
+
+**Hooks:** `tool` -- wraps `next()` and records timing.
+
+Each `ToolCallRecord` contains: `{ callId: string; name: string; args: Record<string, unknown>; result: unknown; duration: number; error?: string }`.
+
+**State keys:**
+- `observe:tools` -- array of `ToolCallRecord` (reducer: append)
+
+---
+
+## observe.duration()
+
+Measures wall-clock duration of each turn in milliseconds.
+
+```typescript
+function observeDuration(): Middleware
+```
+
+```typescript
+agent.use(observe.duration())
+
+const result = await agent.run("Hello").result
+const ms = result.state["observe:duration"] as number
+console.log(`Turn took ${ms}ms`)
+```
+
+**Hooks:** `turn` -- wraps `next()`.
+
+**State keys:**
+- `observe:duration` -- number (last-write-wins; reflects most recent turn)
+
+---
+
+## observe.log()
+
+Emits structured JSON log events for every lifecycle phase. Suitable for Datadog, Grafana, ELK, and similar logging pipelines.
+
+```typescript
+function observeLog(opts?: ObserveLogOptions): Middleware
+```
+
+```typescript
+// Default: JSON lines to stderr
+agent.use(observe.log())
+
+// Custom output (e.g., pino)
+agent.use(observe.log({
+  output: (event) => pino.info(event),
+}))
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `output` | `(event: LogEvent) => void` | JSON line to stderr | Custom output function |
+
+Each `LogEvent` contains:
+
+```typescript
+interface LogEvent {
+  timestamp: string       // ISO 8601
+  type: string            // "session:start", "turn:start", "model:call", etc.
+  sessionId: string
+  turnIndex: number
+  data: Record<string, unknown>
+}
+```
+
+**Hooks:** `session`, `turn`, `model`, `tool` -- logs start/end events for each.
+
+Event types emitted: `session:start`, `session:end`, `turn:start`, `turn:end`, `model:call`, `model:response`, `tool:start`, `tool:end`.

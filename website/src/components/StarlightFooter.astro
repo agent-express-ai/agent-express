@@ -1,0 +1,25 @@
+---
+import Pagination from 'virtual:starlight/components/Pagination';
+---
+
+<footer class="sl-flex">
+  <Pagination />
+  <div class="site-footer">MIT License</div>
+</footer>
+
+<style>
+  @layer starlight.core {
+    footer {
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+  }
+
+  .site-footer {
+    text-align: center;
+    color: var(--sl-color-gray-4);
+    font-size: var(--sl-text-xs);
+    padding: 1.5rem 0 0.5rem;
+    margin-top: 1rem;
+  }
+</style>

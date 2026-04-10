@@ -1,0 +1,75 @@
+---
+title: Model
+description: "Model middleware: retry with backoff, complexity-based routing."
+---
+
+Model-level middleware. Automatic retry with exponential backoff for transient failures, and complexity-based routing to optimize cost.
+
+## model.retry()
+
+Wraps LLM calls with exponential backoff for transient failures (rate limits, network errors).
+
+```typescript
+function modelRetry(config?: RetryConfig): Middleware
+```
+
+```typescript
+// Default: 2 retries, 1000ms initial delay
+agent.use(model.retry())
+
+// Custom: 3 retries, 500ms initial delay
+agent.use(model.retry({ maxRetries: 3, initialDelayMs: 500 }))
+```
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxRetries` | `number` | `2` | Maximum retry attempts |
+| `initialDelayMs` | `number` | `1000` | Initial delay (doubles each retry) |
+
+**Hooks:** `model` -- wraps `next()` in a retry loop.
+
+Retryable errors: [`RateLimitError`](/guides/errors/), [`NetworkError`](/guides/errors/). Non-retryable: [`AuthenticationError`](/guides/errors/), [`ContentFilterError`](/guides/errors/). For `RateLimitError` with `retryAfter`, the delay is the greater of the backoff delay and `retryAfter * 1000`.
+
+---
+
+## model.router()
+
+Routes model calls by complexity, switching between cheaper and more capable models automatically. Saves 60-90% on LLM costs for mixed-complexity workloads.
+
+```typescript
+function modelRouter(config: ModelRouterConfig): Middleware
+```
+
+```typescript
+agent.use(model.router({
+  routes: {
+    simple:  "anthropic/claude-haiku-4-5",
+    medium:  "anthropic/claude-sonnet-4-6",
+    complex: "anthropic/claude-opus-4-6",
+  },
+}))
+
+// Custom classifier
+agent.use(model.router({
+  routes: { simple: "...", medium: "...", complex: "..." },
+  classify: (ctx) => {
+    if (ctx.toolDefs.length > 3) return "complex"
+    return "simple"
+  },
+}))
+```
+
+**Default classification heuristic:**
+- **simple**: < 500 estimated tokens AND no tools defined
+- **complex**: > 2000 tokens OR 5+ tools available
+- **medium**: everything else
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `routes` | `Record<ComplexityTier, string>` | *required* | Model ID for each tier. `ComplexityTier` is `"simple" \| "medium" \| "complex"`. |
+| `classify` | `(ctx: ModelContext) => ComplexityTier` | built-in heuristic | Custom classifier function |
+| `tokenCounter` | `TokenCounter` | `chars/4` | Token counter for input complexity estimation |
+
+**Hooks:** `model` -- classifies and calls `ctx.setModel()` before `next()`.

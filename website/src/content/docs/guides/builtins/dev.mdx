@@ -1,0 +1,47 @@
+---
+title: Development
+description: "Development middleware: full lifecycle terminal trace."
+---
+
+Development and debugging middleware. Trace the full agent lifecycle in the terminal during development.
+
+## dev.console()
+
+Prints the full agent lifecycle to stderr in a tree-structured format. Useful for development and debugging.
+
+```typescript
+function devConsole(config?: DevConsoleConfig): Middleware
+```
+
+```typescript
+agent.use(dev.console())
+```
+
+Output example:
+```
+┌ session s-abc123
+│  → turn #0
+│  │  → model.call  sonnet  tokens:150→85  847ms
+│  │  → tool.exec   search  234ms
+│  │  → model.call  sonnet  tokens:320→120 612ms
+│  → turn #0 done  1693ms
+└ session done  1693ms
+```
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `format` | `(entry: ConsoleEntry) => string` | built-in tree formatter | Custom format function |
+
+Each `ConsoleEntry` has:
+
+```typescript
+interface ConsoleEntry {
+  type: string                    // "session:start", "turn:start", "model:call", etc.
+  depth: number                   // 0=session, 1=turn, 2=model/tool
+  summary: string                 // Human-readable summary line
+  data?: Record<string, unknown>  // Event-specific data
+}
+```
+
+**Hooks:** `session`, `turn`, `model`, `tool` -- logs start/end events for each.

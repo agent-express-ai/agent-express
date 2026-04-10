@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint"
 
 export default tseslint.config(
-  { ignores: ["dist/", "node_modules/", "packages/", "*.config.*", "tests/"] },
+  { ignores: ["dist/", "node_modules/", "packages/", "website/", "*.config.*", "tests/"] },
   ...tseslint.configs.recommendedTypeChecked,
   {
     files: ["src/**/*.ts"],

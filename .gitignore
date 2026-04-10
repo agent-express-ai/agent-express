@@ -9,7 +9,13 @@ dist/
 .idea/
 coverage/
 
-docs/
-specs/
-.specify/
-.claude/
+# Website (docs site)
+website/node_modules/
+website/dist/
+website/.astro/
+
+/docs/
+/specs/
+/.specify/
+/.claude/
+.gstack/

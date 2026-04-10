@@ -1,0 +1,286 @@
+---
+---
+
+<section class="terminal-section">
+  <div class="terminal-window">
+    <div class="title-bar">
+      <div class="dots">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+      </div>
+      <span class="title-text">Terminal</span>
+      <div class="dots-spacer"></div>
+    </div>
+    <div class="terminal-body">
+      <div class="line line-cmd">
+        <span class="prompt">$ </span><span class="typed-text">npx create-agent-express "research agent"</span><span class="cursor">▊</span>
+      </div>
+      <div class="line line-1">
+        <span class="check">✓</span> Creating research agent...
+      </div>
+      <div class="line line-2">
+        <span class="check">✓</span> Installing dependencies...
+      </div>
+      <div class="line line-3">
+        <span class="check">✓</span> Project ready at ./research-agent
+      </div>
+      <div class="line line-4"></div>
+      <div class="line line-5">
+        Run:&nbsp;<span class="highlight">cd research-agent && npx agent-express dev</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .terminal-section {
+    padding: 3rem 1.5rem 4rem;
+    background: var(--bg, #111827);
+    display: flex;
+    justify-content: center;
+  }
+
+  .terminal-window {
+    width: 100%;
+    max-width: 640px;
+    background: #0f172a;
+    border-radius: 12px;
+    border: 1px solid #1e293b;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .title-bar {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #0b1120;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .dots {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+    width: 60px;
+  }
+
+  .dots-spacer {
+    width: 60px;
+    flex: 0 0 auto;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  .dot-red { background: #ef4444; }
+  .dot-yellow { background: #eab308; }
+  .dot-green { background: #22c55e; }
+
+  .title-text {
+    flex: 1;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .terminal-body {
+    padding: 1.25rem 1.5rem;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    min-height: 180px;
+  }
+
+  .line {
+    white-space: nowrap;
+    overflow: hidden;
+    color: #d6deeb;
+    display: flex;
+    align-items: baseline;
+  }
+
+  .prompt {
+    color: #22c55e;
+    flex-shrink: 0;
+    margin-right: 0.5em;
+  }
+
+  .check {
+    color: #22c55e;
+    margin-right: 0.375em;
+  }
+
+  .highlight {
+    color: #7c3aed;
+  }
+
+  /* Cursor blink */
+  .cursor {
+    color: #22c55e;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* Typing animation for command line */
+  .typed-text {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 0;
+    animation:
+      typing 2s steps(44) 0.5s forwards,
+      typing-reset 8s steps(1) infinite;
+  }
+
+  .cursor {
+    animation:
+      blink 0.8s step-end infinite,
+      cursor-hide 8s steps(1) infinite;
+  }
+
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 44ch; }
+  }
+
+  /* Output lines appear sequentially after typing finishes */
+  .line-1, .line-2, .line-3, .line-4, .line-5 {
+    opacity: 0;
+    animation-fill-mode: forwards;
+    animation-timing-function: steps(1);
+  }
+
+  .line-1 {
+    animation: appear 8s steps(1) infinite;
+    animation-delay: 0s;
+  }
+
+  .line-2 {
+    animation: appear-2 8s steps(1) infinite;
+  }
+
+  .line-3 {
+    animation: appear-3 8s steps(1) infinite;
+  }
+
+  .line-4 {
+    animation: appear-4 8s steps(1) infinite;
+  }
+
+  .line-5 {
+    animation: appear-5 8s steps(1) infinite;
+  }
+
+  /* Main cycle: 8s total
+     0-0.5s:    pause before typing
+     0.5-2.5s:  typing command
+     2.8s:      line 1 appears
+     3.4s:      line 2 appears
+     4.0s:      line 3 appears
+     4.4s:      line 4 (empty)
+     4.6s:      line 5 appears
+     4.6-7.5s:  hold result
+     7.5-8s:    reset */
+
+  .typed-text {
+    animation: type-cycle 8s steps(44) infinite;
+  }
+
+  @keyframes type-cycle {
+    0%        { width: 0; }
+    6.25%     { width: 0; }     /* 0.5s: start typing */
+    31.25%    { width: 44ch; }  /* 2.5s: done typing */
+    93.75%    { width: 44ch; }  /* 7.5s: hold */
+    94%       { width: 0; }     /* reset */
+    100%      { width: 0; }
+  }
+
+  @keyframes appear {
+    0%        { opacity: 0; }
+    35%       { opacity: 0; }   /* 2.8s */
+    35.1%     { opacity: 1; }
+    93.75%    { opacity: 1; }   /* 7.5s */
+    94%       { opacity: 0; }
+    100%      { opacity: 0; }
+  }
+
+  @keyframes appear-2 {
+    0%        { opacity: 0; }
+    42.5%     { opacity: 0; }   /* 3.4s */
+    42.6%     { opacity: 1; }
+    93.75%    { opacity: 1; }
+    94%       { opacity: 0; }
+    100%      { opacity: 0; }
+  }
+
+  @keyframes appear-3 {
+    0%        { opacity: 0; }
+    50%       { opacity: 0; }   /* 4.0s */
+    50.1%     { opacity: 1; }
+    93.75%    { opacity: 1; }
+    94%       { opacity: 0; }
+    100%      { opacity: 0; }
+  }
+
+  @keyframes appear-4 {
+    0%        { opacity: 0; }
+    55%       { opacity: 0; }   /* 4.4s */
+    55.1%     { opacity: 1; }
+    93.75%    { opacity: 1; }
+    94%       { opacity: 0; }
+    100%      { opacity: 0; }
+  }
+
+  @keyframes appear-5 {
+    0%        { opacity: 0; }
+    57.5%     { opacity: 0; }   /* 4.6s */
+    57.6%     { opacity: 1; }
+    93.75%    { opacity: 1; }
+    94%       { opacity: 0; }
+    100%      { opacity: 0; }
+  }
+
+  @keyframes cursor-hide {
+    0%        { opacity: 1; }
+    35%       { opacity: 0; }
+    93.75%    { opacity: 0; }
+    94%       { opacity: 1; }
+    100%      { opacity: 1; }
+  }
+
+  .cursor {
+    animation:
+      blink 0.8s step-end infinite,
+      cursor-visibility 8s linear infinite;
+  }
+
+  @keyframes cursor-visibility {
+    0%        { visibility: visible; }
+    34%       { visibility: visible; }
+    35%       { visibility: hidden; }
+    93%       { visibility: hidden; }
+    94%       { visibility: visible; }
+    100%      { visibility: visible; }
+  }
+
+  @media (max-width: 640px) {
+    .terminal-section {
+      padding: 2rem 1rem 3rem;
+    }
+
+    .terminal-body {
+      padding: 1rem 1.25rem;
+      font-size: 0.75rem;
+    }
+  }
+</style>

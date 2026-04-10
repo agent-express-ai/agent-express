@@ -1,0 +1,475 @@
+---
+title: Testing
+description: "TestModel, FunctionModel, record/replay, snapshots, and testAgent()."
+---
+
+Agent Express provides a complete testing toolkit via the `agent-express/test` entry point. Every test utility is designed to work without real API calls -- zero cost, zero latency, fully deterministic.
+
+```typescript
+import {
+  TestModel, FunctionModel,
+  testAgent, testSession,
+  capture,
+  RecordModel, ReplayModel,
+  serializeForSnapshot, toMatchAgentSnapshot,
+} from "agent-express/test"
+```
+
+## TestModel
+
+A deterministic mock model that implements `LanguageModelV3`. Use it as a drop-in replacement for real LLM providers in tests. Zero cost, zero latency, no network calls.
+
+```typescript
+class TestModel implements LanguageModelV3 {
+  constructor(opts?: TestModelOptions)
+  reset(): void
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `responses` | `ModelResponse[]` | `undefined` | Ordered list of responses. Each model call gets the next response. |
+| `defaultText` | `string` | `"test response"` | Default text when no responses configured or after responses exhausted (with auto-tool). |
+
+### Three Modes
+
+**No config (auto-tool mode):** On the first call, automatically calls all available tools with minimal valid arguments. On subsequent calls, returns `"test response"`.
+
+```typescript
+const agent = new Agent({
+  name: "test",
+  model: new TestModel(),
+  instructions: "test",
+  defaults: false,
+})
+```
+
+**Pre-configured responses:** Returns responses in order. Throws when exhausted.
+
+```typescript
+const model = new TestModel({
+  responses: [
+    {
+      toolCalls: [{ toolCallId: "tc-1", toolName: "search", args: { query: "cats" } }],
+      usage: { inputTokens: 100, outputTokens: 50 },
+      finishReason: "tool-calls",
+    },
+    {
+      text: "Here are results about cats.",
+      usage: { inputTokens: 200, outputTokens: 80 },
+      finishReason: "stop",
+    },
+  ],
+})
+```
+
+**Default text:** Always returns the specified text with no tool calls.
+
+```typescript
+const model = new TestModel({ defaultText: "Hello from test!" })
+```
+
+### Reset for Reuse
+
+Call `model.reset()` between tests to reset the call index:
+
+```typescript
+const model = new TestModel({ defaultText: "Hi" })
+
+afterEach(() => model.reset())
+```
+
+## FunctionModel
+
+A callback-based mock model for complex test scenarios. Implements `LanguageModelV3`. Every model call is delegated to a user-supplied function.
+
+```typescript
+class FunctionModel implements LanguageModelV3 {
+  constructor(handler: FunctionModelHandler)
+  reset(): void
+}
+```
+
+The handler type:
+
+```typescript
+type FunctionModelHandler = (
+  messages: Message[],
+  info: { tools: FunctionModelToolDef[]; callIndex: number },
+) => ModelResponse | Promise<ModelResponse>
+```
+
+Where `FunctionModelToolDef` is `{ name: string; description?: string; parameters: unknown }`.
+
+```typescript
+const model = new FunctionModel((messages, { tools, callIndex }) => {
+  if (callIndex === 0) {
+    return {
+      toolCalls: [{ toolCallId: "tc-1", toolName: "search", args: { query: "cats" } }],
+      usage: { inputTokens: 100, outputTokens: 50 },
+      finishReason: "tool-calls",
+    }
+  }
+  return {
+    text: "Done!",
+    usage: { inputTokens: 200, outputTokens: 80 },
+    finishReason: "stop",
+  }
+})
+```
+
+The handler receives:
+- `messages` -- conversation history as `Message[]`
+- `info.tools` -- available tool definitions (`{ name, description, parameters }`)
+- `info.callIndex` -- which call this is (0-based)
+
+Use `model.reset()` to reset the call index between tests.
+
+## testAgent()
+
+A declarative test helper that runs an agent and checks assertions against the result. Supports single-turn and multi-turn testing.
+
+```typescript
+async function testAgent(agent: Agent, opts: TestOptions): Promise<TestResult>
+```
+
+### Single-Turn Test
+
+```typescript
+import { testAgent } from "agent-express/test"
+
+// Agent must have observe.tools() for toolsCalled
+// and guard.budget() for costUnder assertions
+const result = await testAgent(agent, {
+  input: "What is 2 + 2?",
+  expect: {
+    outputContains: "4",
+    toolsCalled: ["calculator"],   // requires observe.tools()
+    costUnder: 0.01,               // requires guard.budget()
+  },
+})
+
+expect(result.passed).toBe(true)
+```
+
+### Multi-Turn Test
+
+Pass an array of strings. Each string becomes one turn in a session:
+
+```typescript
+const result = await testAgent(agent, {
+  input: ["Hello, my name is Alice", "What is my name?"],
+  expect: {
+    outputContains: "Alice",
+  },
+})
+```
+
+### Assertion Options
+
+| Assertion | Type | Description |
+|-----------|------|-------------|
+| `toolsCalled` | `string[]` | Tool names that should have been called (requires `observe.tools()`) |
+| `outputContains` | `string` | Substring that should appear in the text |
+| `outputMatches` | `RegExp` | Regex the text should match |
+| `costUnder` | `number` | Maximum acceptable cost in USD (requires `guard.budget()`) |
+
+### TestResult
+
+```typescript
+interface TestResult {
+  passed: boolean          // Whether all assertions passed
+  failures: string[]       // Failure descriptions (empty if passed)
+  run: RunResult           // Full RunResult from the last turn
+}
+```
+
+## testSession()
+
+A multi-turn session test helper that returns per-turn results and final session state. No built-in assertions -- use with your test framework's assertions.
+
+```typescript
+async function testSession(agent: Agent, inputs: string[]): Promise<TestSessionResult>
+```
+
+```typescript
+import { testSession } from "agent-express/test"
+
+const result = await testSession(agent, ["Hello", "Follow up", "Goodbye"])
+
+expect(result.turns).toHaveLength(3)
+expect(result.session.history).toHaveLength(6) // 3 user + 3 assistant
+expect(result.session.state["observe:usage"]).toBeDefined()
+```
+
+### TestSessionResult
+
+```typescript
+interface TestSessionResult {
+  turns: RunResult[]                          // Result from each turn
+  session: { history: Message[]; state: Record<string, unknown>; id: string }
+  passed: boolean
+  failures: string[]
+}
+```
+
+## capture()
+
+Creates a middleware that records model call inputs and outputs for inspection. Useful when you need to examine exactly what was sent to and received from the model.
+
+```typescript
+function capture(): { middleware: Middleware; result: CaptureResult }
+```
+
+```typescript
+const { middleware, result } = capture()
+const agent = new Agent({
+  name: "test",
+  model: new TestModel(),
+  instructions: "test",
+  defaults: false,
+}).use(middleware)
+
+await agent.run("Hello").result
+
+console.log(result.turns[0].input)    // messages sent to model
+console.log(result.turns[0].response) // model response
+```
+
+The returned `CaptureResult` has:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `turns` | `TurnCapture[]` | All captured model calls, in order |
+| `clear()` | `() => void` | Reset captured data to empty |
+
+Each `TurnCapture` contains:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `callIndex` | `number` | Which model call in this turn (0-based) |
+| `input` | `Message[]` | Messages sent to the model (snapshot taken before the call) |
+| `response` | `ModelResponse` | Model response returned after the call |
+
+## Record/Replay Cassettes
+
+Record real LLM interactions once, then replay them in tests forever. Zero cost after initial recording, and API keys are automatically scrubbed.
+
+```typescript
+class RecordModel implements LanguageModelV3 {
+  constructor(inner: LanguageModelV3)
+  saveCassette(path: string): Promise<void>
+}
+
+class ReplayModel implements LanguageModelV3 {
+  static fromFile(path: string): Promise<ReplayModel>
+  static fromJSON(data: any): ReplayModel
+}
+```
+
+### Recording
+
+Wrap a real model with `RecordModel`, run your test, then save the cassette:
+
+```typescript
+import { RecordModel } from "agent-express/test"
+import { resolveModel } from "agent-express"
+
+const real = await resolveModel("anthropic/claude-sonnet-4-6")
+const recorder = new RecordModel(real)
+
+const agent = new Agent({
+  name: "test",
+  model: recorder,
+  instructions: "You are a helpful assistant.",
+  defaults: false,
+})
+
+const { text } = await agent.run("Hello").result
+await recorder.saveCassette("./fixtures/hello.cassette.json")
+```
+
+The cassette JSON file contains all request/response pairs with API keys automatically redacted.
+
+### Replaying
+
+Load a cassette and use `ReplayModel` as the model:
+
+```typescript
+import { ReplayModel } from "agent-express/test"
+
+const replay = await ReplayModel.fromFile("./fixtures/hello.cassette.json")
+
+const agent = new Agent({
+  name: "test",
+  model: replay,
+  instructions: "You are a helpful assistant.",
+  defaults: false,
+})
+
+const { text } = await agent.run("Hello").result
+// Returns the exact same response that was recorded
+```
+
+You can also create a `ReplayModel` from parsed JSON data:
+
+```typescript
+const replay = ReplayModel.fromJSON(parsedCassetteData)
+```
+
+### Cassette Format
+
+```typescript
+interface Cassette {
+  version: number                    // Format version (currently 1)
+  model: string                      // Model identifier
+  recordedAt: string                 // ISO timestamp
+  interactions: CassetteInteraction[] // Ordered request/response pairs
+}
+```
+
+## Snapshot Testing
+
+Compare agent output against stored snapshots using Vitest's built-in snapshot infrastructure.
+
+### serializeForSnapshot()
+
+Creates a deterministic serializable form of a `RunResult`. Sorts state keys alphabetically and excludes specified keys.
+
+```typescript
+function serializeForSnapshot(
+  result: Pick<RunResult, "text" | "state"> & { data?: unknown },
+  options?: SnapshotOptions,
+): Record<string, unknown>
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `exclude` | `string[]?` | State keys to exclude from the snapshot (e.g., `["observe:duration"]`) |
+
+```typescript
+import { serializeForSnapshot } from "agent-express/test"
+
+const result = await agent.run("Hello").result
+const serialized = serializeForSnapshot(result, {
+  exclude: ["observe:duration"], // Exclude non-deterministic keys
+})
+
+expect(serialized).toMatchSnapshot()
+```
+
+The result is a plain object suitable for snapshot comparison.
+
+### toMatchAgentSnapshot()
+
+A custom Vitest matcher that compares a `RunResult` against a stored snapshot. Uses deterministic serialization and delegates to Vitest's built-in snapshot infrastructure.
+
+```typescript
+function toMatchAgentSnapshot(
+  received: Pick<RunResult, "text" | "state"> & { data?: unknown },
+  options?: SnapshotOptions,
+): { pass: boolean; message: () => string }
+```
+
+Register with `expect.extend()`:
+
+```typescript
+import { toMatchAgentSnapshot } from "agent-express/test"
+
+expect.extend({ toMatchAgentSnapshot })
+
+const result = await agent.run("Hello").result
+expect(result).toMatchAgentSnapshot({
+  exclude: ["observe:duration"],
+})
+```
+
+## Blocking Real API Calls
+
+The `agent-express test` CLI command (see below) automatically sets `ALLOW_REAL_REQUESTS=false` before running tests. When combined with the Vitest setup file (`vitest-agent-setup.ts`), this blocks real API calls so tests never accidentally hit live endpoints.
+
+To allow real requests in specific tests (e.g., integration tests):
+
+```typescript
+import { setAllowRealRequests } from "agent-express/test"
+
+beforeAll(() => setAllowRealRequests(true))
+afterAll(() => setAllowRealRequests(false))
+```
+
+## `agent-express test` CLI
+
+The built-in test runner wraps Vitest with agent-specific configuration. See [CLI](/guides/cli/) for the full command reference.
+
+```bash
+# Run all agent tests (discovers *.agent.test.ts files)
+npx agent-express test
+
+# JUnit XML output for CI pipelines
+npx agent-express test --ci
+
+# Custom file pattern
+npx agent-express test --pattern "**/*.test.ts"
+```
+
+The `--ci` flag outputs JUnit XML to `./test-results/junit.xml`, suitable for CI systems like GitHub Actions, CircleCI, and Jenkins.
+
+### What It Does
+
+1. Sets `ALLOW_REAL_REQUESTS=false` to block real API calls
+2. Discovers test files matching the pattern
+3. Runs tests via Vitest
+4. Outputs results (and JUnit XML with `--ci`)
+
+## Complete Test Example
+
+```typescript
+import { describe, it, expect, afterEach } from "vitest"
+import { Agent, tools, guard, observe } from "agent-express"
+import { TestModel, testAgent } from "agent-express/test"
+import { z } from "zod"
+
+const model = new TestModel({
+  responses: [
+    {
+      toolCalls: [{ toolCallId: "tc-1", toolName: "add", args: { a: 2, b: 3 } }],
+      usage: { inputTokens: 50, outputTokens: 20 },
+      finishReason: "tool-calls",
+    },
+    {
+      text: "The sum of 2 and 3 is 5.",
+      usage: { inputTokens: 100, outputTokens: 30 },
+      finishReason: "stop",
+    },
+  ],
+})
+
+afterEach(() => model.reset())
+
+const agent = new Agent({
+  name: "calculator",
+  model,
+  instructions: "You are a calculator.",
+  defaults: false,
+})
+  .use(observe.tools())
+  .use(tools.function({
+    name: "add",
+    description: "Add two numbers",
+    schema: z.object({ a: z.number(), b: z.number() }),
+    execute: async ({ a, b }) => a + b,
+  }))
+
+describe("calculator agent", () => {
+  it("should call the add tool", async () => {
+    const result = await testAgent(agent, {
+      input: "What is 2 + 3?",
+      expect: {
+        toolsCalled: ["add"],
+        outputContains: "5",
+      },
+    })
+    expect(result.passed).toBe(true)
+  })
+})
+```
