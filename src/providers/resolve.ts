@@ -42,6 +42,13 @@ export async function resolveModel(modelId: string): Promise<LanguageModelV3> {
   const provider = modelId.slice(0, slashIndex)
   const modelName = modelId.slice(slashIndex + 1)
 
+  // Validate provider name — prevent path traversal and arbitrary package loading
+  if (!/^[a-z][a-z0-9-]*$/.test(provider)) {
+    throw new Error(
+      `Invalid provider name: "${provider}". Provider must be a lowercase package name (letters, digits, hyphens).`,
+    )
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mod: any
   try {
