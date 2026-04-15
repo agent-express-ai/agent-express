@@ -34,10 +34,12 @@
 
         <!-- observe panel -->
         <div class="tab-panel panel-observe">
-          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">usage</span>())    <span class="cmt">// token tracking → state['observe:usage']</span>
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">log</span>())      <span class="cmt">// structured JSON logging with levels</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">metrics</span>())  <span class="cmt">// OpenTelemetry metrics (Prometheus, OTLP)</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">traces</span>())   <span class="cmt">// OpenTelemetry distributed tracing</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">usage</span>())    <span class="cmt">// token tracking → state['observe:usage']</span>
 <span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">tools</span>())    <span class="cmt">// tool call recording</span>
-<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">duration</span>()) <span class="cmt">// turn timing</span>
-<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">log</span>())      <span class="cmt">// structured JSON logging</span></code></pre>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">observe</span>.<span class="fn">duration</span>()) <span class="cmt">// turn timing</span></code></pre>
         </div>
 
         <!-- model panel -->
