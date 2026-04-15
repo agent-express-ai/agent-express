@@ -40,6 +40,9 @@ export type {
   Usage,
   RetryConfig,
   LogEvent,
+  SpanData,
+  MetricEvent,
+  MetricsSnapshot,
   StateSchema,
   StateFieldDef,
 } from "./types.js"

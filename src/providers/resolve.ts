@@ -3,17 +3,17 @@ import type { LanguageModelV3 } from "@ai-sdk/provider"
 /**
  * Resolves a model identifier string to a `LanguageModelV3` instance.
  *
- * Parses the `"provider/model-name"` format and dynamically imports the
- * corresponding AI SDK provider package. Provider packages (`@ai-sdk/anthropic`,
- * `@ai-sdk/openai`) are peer dependencies that the user installs.
+ * Dynamically imports the corresponding `@ai-sdk/{provider}` package for any
+ * provider. Provider packages are optional peer dependencies — users install
+ * only what they need.
  *
- * @param modelId - Model string like `"anthropic/claude-sonnet-4-6"` or `"openai/gpt-4o"`
+ * @param modelId - Model string like `"anthropic/claude-sonnet-4-6"`, `"google/gemini-2.0-flash"`, or `"openai/gpt-4o"`
  * @returns Resolved LanguageModelV3 instance
- * @throws Error if format is invalid, provider is unknown, or package is not installed
+ * @throws Error if format is invalid, provider package is not installed, or provider export is incompatible
  *
  * @example
  * ```typescript
- * const model = await resolveModel("anthropic/claude-sonnet-4-6")
+ * const model = await resolveModel("google/gemini-2.0-flash")
  * const result = await model.doGenerate({ prompt: [...] })
  * ```
  */
@@ -42,24 +42,35 @@ export async function resolveModel(modelId: string): Promise<LanguageModelV3> {
   const provider = modelId.slice(0, slashIndex)
   const modelName = modelId.slice(slashIndex + 1)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mod: any
   try {
-    if (provider === "anthropic") {
-      const mod = await import("@ai-sdk/anthropic")
-      return mod.anthropic(modelName) as unknown as LanguageModelV3
-    } else if (provider === "openai") {
-      const mod = await import("@ai-sdk/openai")
-      return mod.openai(modelName) as unknown as LanguageModelV3
-    } else {
-      throw new Error(
-        `Unknown model provider: "${provider}". Supported: anthropic, openai. Or pass a LanguageModelV3 object directly.`,
-      )
-    }
+    mod = await import(`@ai-sdk/${provider}`)
   } catch (err) {
-    if ((err as { code?: string }).code === "ERR_MODULE_NOT_FOUND") {
+    const code = (err as { code?: string }).code
+    const msg = (err as Error).message ?? ""
+    if (code === "ERR_MODULE_NOT_FOUND" ||
+        code === "MODULE_NOT_FOUND" ||
+        msg.includes("Failed to load url") ||
+        msg.includes("Cannot find module")) {
       throw new Error(
         `Provider package @ai-sdk/${provider} is not installed. Run: npm install @ai-sdk/${provider}`,
       )
     }
     throw err
   }
+
+  // AI SDK providers export a factory function — try default export,
+  // then named export matching the provider name (without hyphens).
+  const providerKey = provider.replace(/-/g, "")
+  const createModel = mod.default ?? mod[provider] ?? mod[providerKey]
+
+  if (typeof createModel !== "function") {
+    throw new Error(
+      `Provider package @ai-sdk/${provider} does not export a model factory function. ` +
+      `Pass a LanguageModelV3 object directly instead of a string.`,
+    )
+  }
+
+  return createModel(modelName) as unknown as LanguageModelV3
 }

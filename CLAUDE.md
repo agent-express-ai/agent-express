@@ -160,3 +160,10 @@ npx agent-express test                           # agent test runner (blocks rea
 npx agent-express test --ci                      # JUnit XML output for CI
 ```
 
+
+## Active Technologies
+- TypeScript strict mode, ESM only, Node.js 20+ + `@ai-sdk/provider` (v3), `@opentelemetry/api` (optional peer dep), Zod, tsup (009-providers-observability)
+- N/A (metrics are in-memory, reset on restart) (009-providers-observability)
+
+## Recent Changes
+- 009-providers-observability: Added TypeScript strict mode, ESM only, Node.js 20+ + `@ai-sdk/provider` (v3), `@opentelemetry/api` (optional peer dep), Zod, tsup
