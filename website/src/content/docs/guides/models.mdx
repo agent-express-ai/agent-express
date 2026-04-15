@@ -30,38 +30,44 @@ Common model strings:
 | `"anthropic/claude-opus-4-6"` | Anthropic | Claude Opus |
 | `"openai/gpt-4o"` | OpenAI | GPT-4o |
 | `"openai/gpt-4o-mini"` | OpenAI | GPT-4o Mini |
+| `"google/gemini-2.0-flash"` | Google | Gemini 2.0 Flash |
+| `"mistral/mistral-large-latest"` | Mistral | Mistral Large |
+| `"groq/llama-3.1-70b-versatile"` | Groq | Llama 3.1 70B |
 
 ## Supported Providers
 
-Agent Express ships with built-in support for Anthropic and OpenAI. Provider packages are **optional peer dependencies** -- install only what you need.
+Agent Express supports **any AI SDK v3 provider** via dynamic import. Provider packages are **optional peer dependencies** -- install only what you need. No framework code changes required when new providers are published.
 
-### Anthropic (Claude)
+| Provider | Package | Environment Variable |
+|---|---|---|
+| Anthropic (Claude) | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI (GPT) | `@ai-sdk/openai` | `OPENAI_API_KEY` |
+| Google (Gemini) | `@ai-sdk/google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| Mistral | `@ai-sdk/mistral` | `MISTRAL_API_KEY` |
+| Groq | `@ai-sdk/groq` | `GROQ_API_KEY` |
+| Amazon Bedrock | `@ai-sdk/amazon-bedrock` | AWS credentials |
+| Azure OpenAI | `@ai-sdk/azure` | `AZURE_API_KEY` |
+| DeepSeek | `@ai-sdk/deepseek` | `DEEPSEEK_API_KEY` |
+| xAI (Grok) | `@ai-sdk/xai` | `XAI_API_KEY` |
+| Cohere | `@ai-sdk/cohere` | `COHERE_API_KEY` |
+| Together AI | `@ai-sdk/togetherai` | `TOGETHER_AI_API_KEY` |
+| Fireworks | `@ai-sdk/fireworks` | `FIREWORKS_API_KEY` |
 
-```bash
-npm install @ai-sdk/anthropic
-```
-
-Set the `ANTHROPIC_API_KEY` environment variable:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-### OpenAI (GPT)
-
-```bash
-npm install @ai-sdk/openai
-```
-
-Set the `OPENAI_API_KEY` environment variable:
+Install a provider and use it immediately:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
+npm install @ai-sdk/google
 ```
 
-### Other Providers
+```typescript
+const agent = new Agent({
+  name: "assistant",
+  model: "google/gemini-2.0-flash",
+  instructions: "You are a helpful assistant.",
+})
+```
 
-Any AI SDK v3 compatible provider works with Agent Express. See [Custom Providers](#custom-providers) below for how to pass model objects directly.
+See the full list at [AI SDK providers](https://ai-sdk.dev/providers).
 
 ## Using Model Objects
 
@@ -98,10 +104,8 @@ const model = await resolveModel("anthropic/claude-sonnet-4-6")
 `resolveModel()` is async because it dynamically imports the provider package. It throws if:
 
 - The format is invalid (no `/` separator)
-- The provider is unknown (not `anthropic` or `openai`)
-- The provider package is not installed
-
-For unknown providers, pass a `LanguageModelV3` object directly instead of a string.
+- The provider name contains invalid characters (must be lowercase alphanumeric with hyphens)
+- The provider package is not installed (with an actionable `npm install` command in the error)
 
 ## Model Routing
 
@@ -150,23 +154,22 @@ agent.use(model.router({
 
 For full details on `model.router()` and other built-in middleware, see the [Built-in Middleware](/guides/builtins/) guide.
 
-## Custom Providers
+## Custom Provider Configuration
 
-Any provider that implements the AI SDK v3 `LanguageModelV3` interface works with Agent Express. Pass the model object directly to the `model` field:
+Most providers work with just a string. Pass a `LanguageModelV3` object when you need custom configuration (proxy URLs, custom headers, non-standard auth):
 
 ```typescript
 import { Agent } from "agent-express"
-import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { createAzure } from "@ai-sdk/azure"
 
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_API_KEY,
+const azure = createAzure({
+  apiKey: process.env.AZURE_API_KEY,
+  baseURL: "https://my-deployment.openai.azure.com/openai",
 })
 
 const agent = new Agent({
   name: "assistant",
-  model: google("gemini-2.5-pro"),
+  model: azure("gpt-4o"),
   instructions: "You are a helpful assistant.",
 })
 ```
-
-This pattern works with any AI SDK v3 provider -- Google, Mistral, Amazon Bedrock, Azure OpenAI, Groq, and others. Check the [AI SDK provider list](https://ai-sdk.dev/providers) for available packages.

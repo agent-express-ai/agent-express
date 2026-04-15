@@ -175,7 +175,7 @@ export interface RetryConfig {
 export interface LogEvent {
   /** ISO 8601 timestamp. */
   timestamp: string
-  /** Event type: "model:call", "model:response", "tool:call", "tool:result", "retry", "error", etc. */
+  /** Event type: "model:call", "model:response", "tool:start", "tool:end", etc. */
   type: string
   /** Session identifier. */
   sessionId: string
@@ -183,6 +183,86 @@ export interface LogEvent {
   turnIndex: number
   /** Event-specific data (model, tokens, cost, tool name, duration, error). */
   data: Record<string, unknown>
+  /** Log severity level. Added in 009-providers-observability. */
+  level?: "debug" | "info" | "warn" | "error"
+  /** Agent name for multi-agent filtering. Added in 009-providers-observability. */
+  agentName?: string
+  /** Turn identifier (present on turn/model/tool events). */
+  turnId?: string
+  /** Duration in milliseconds (present on end events). */
+  durationMs?: number
+  /** Error details (present on failure events). */
+  error?: { type: string; message: string }
+  /** OpenTelemetry trace ID (present when OTel span context is active). */
+  traceId?: string
+  /** OpenTelemetry span ID (present when OTel span context is active). */
+  spanId?: string
+}
+
+// ─── Observability ────────────────────────────────────
+
+/**
+ * Standalone span representation for observe.traces() middleware.
+ * Used when `@opentelemetry/api` is not installed.
+ */
+export interface SpanData {
+  /** Span name (framework or OTel convention depending on mode). */
+  name: string
+  /** 32-char hex trace identifier. */
+  traceId: string
+  /** 16-char hex span identifier. */
+  spanId: string
+  /** Parent span ID (undefined for root spans). */
+  parentId?: string
+  /** Start timestamp (epoch ms). */
+  startTime: number
+  /** End timestamp (epoch ms). */
+  endTime: number
+  /** Span attributes (framework + GenAI). */
+  attributes: Record<string, string | number | boolean | string[]>
+  /** Span completion status. */
+  status: "ok" | "error"
+  /** Error details (when status is "error"). */
+  error?: { type: string; message: string }
+}
+
+/**
+ * Standalone metric event for observe.metrics() middleware.
+ * Used when `@opentelemetry/api` is not installed.
+ */
+export interface MetricEvent {
+  /** Metric name (e.g., "agent_express_model_calls_total"). */
+  name: string
+  /** Metric type. */
+  type: "counter" | "histogram"
+  /** Attribute key-value pairs. */
+  attributes: Record<string, string>
+  /** Value (increment for counter, observation for histogram). */
+  value: number
+}
+
+/**
+ * Session-scoped metrics snapshot written to `state['observe:metrics']`.
+ * Simple JS object for programmatic access — independent of OTel.
+ */
+export interface MetricsSnapshot {
+  /** Number of model calls in this session. */
+  modelCalls: number
+  /** Number of tool calls in this session. */
+  toolCalls: number
+  /** Number of turns in this session. */
+  turns: number
+  /** Number of errors in this session. */
+  errors: number
+  /** Token usage in this session. */
+  tokens: { input: number; output: number }
+  /** Durations in milliseconds. */
+  duration: {
+    session: number
+    turns: number[]
+    models: number[]
+    tools: number[]
+  }
 }
 
 // ─── Session ──────────────────────────────────────────

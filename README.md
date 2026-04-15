@@ -45,7 +45,8 @@ console.log(text)
 
 - **Middleware architecture** -- 5 onion hooks (`agent`, `session`, `turn`, `model`, `tool`), one `(ctx, next)` pattern
 - **Built-in guards** -- budget caps, input/output validation, timeouts, iteration limits, HITL approval
-- **Observability** -- token usage tracking, tool call recording, turn duration, structured JSON logging
+- **Observability** -- structured logging, OpenTelemetry metrics and traces, token tracking, tool recording
+- **12+ model providers** -- any AI SDK provider via `"provider/model"` string (Anthropic, OpenAI, Google, Mistral, Groq, and more)
 - **Model routing** -- complexity-based model selection across providers
 - **Memory management** -- context window compaction with 5 strategies
 - **Testing toolkit** -- TestModel, FunctionModel, capture, record/replay, snapshots
@@ -75,7 +76,7 @@ agent
 | Namespace | Middleware | Description |
 |---|---|---|
 | `guard` | `budget`, `input`, `output`, `maxIterations`, `timeout`, `approve` | Safety and cost controls |
-| `observe` | `usage`, `tools`, `duration`, `log` | Monitoring and telemetry |
+| `observe` | `usage`, `tools`, `duration`, `log`, `metrics`, `traces` | Monitoring, metrics, and tracing |
 | `model` | `retry`, `router` | LLM call management |
 | `memory` | `compaction` | Context window management |
 | `tools` | `function`, `mcp` | Tool registration |
