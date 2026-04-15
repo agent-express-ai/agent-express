@@ -1,4 +1,4 @@
-import type { Middleware, AgentContext, SessionContext, TurnContext, ModelContext, ToolContext } from "../../middleware.js"
+import type { Middleware, SessionContext, TurnContext, ModelContext, ToolContext } from "../../middleware.js"
 import type { ModelResponse, ToolResult, SpanData } from "../../types.js"
 import { tryImportOtel } from "./otel-api.js"
 
