@@ -127,6 +127,7 @@ import { observeUsage } from "./middleware/observe/usage.js"
 import { observeTools } from "./middleware/observe/tools.js"
 import { observeDuration } from "./middleware/observe/duration.js"
 import { observeLog } from "./middleware/observe/log.js"
+import { observeMetrics } from "./middleware/observe/metrics.js"
 export const observe = {
   /** Token usage tracking → state['observe:usage']. */
   usage: observeUsage,
@@ -136,7 +137,10 @@ export const observe = {
   duration: observeDuration,
   /** Structured JSON logging. */
   log: observeLog,
+  /** Prometheus/OpenMetrics metrics via OTel Meter API. */
+  metrics: observeMetrics,
 }
+export type { ObserveMetricsOptions } from "./middleware/observe/metrics.js"
 
 // Memory namespace
 import { memoryCompaction } from "./middleware/memory/compaction.js"
