@@ -22,7 +22,9 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 - `observe.usage()` — token tracking → `state['observe:usage']`
 - `observe.tools()` — tool call recording → `state['observe:tools']`
 - `observe.duration()` — turn timing → `state['observe:duration']`
-- `observe.log()` — structured JSON logging
+- `observe.log()` — structured JSON logging (level, duration, errors, trace correlation)
+- `observe.metrics()` — OpenTelemetry Meter API metrics (Prometheus/OTLP via user-configured exporter)
+- `observe.traces()` — OpenTelemetry distributed tracing (framework or GenAI span names)
 - `guard.budget()` — USD cost cap per session
 - `guard.input()` — input validation before each LLM call
 - `guard.output()` — output validation after each LLM response
@@ -63,7 +65,7 @@ agent-express/test  → testAgent() declarative test helper
 
 ## Naming Conventions
 
-- **Namespaces**: `guard.budget()`, `guard.approve()`, `tools.mcp()`, `model.router()`, `observe.usage()`, `memory.compaction()`, `dev.console()`
+- **Namespaces**: `guard.budget()`, `guard.approve()`, `tools.mcp()`, `model.router()`, `observe.usage()`, `observe.metrics()`, `observe.traces()`, `memory.compaction()`, `dev.console()`
 - **State keys**: `ctx.state['guard:budget:totalCost']`, `ctx.state['observe:usage']` (namespace:field)
 - **Error classes**: `AbortError`, `ModelError`, `SessionClosedError`, `SessionBusyError`, etc.
 - **Context types**: `AgentContext`, `SessionContext`, `TurnContext`, `ModelContext`, `ToolContext`
@@ -103,7 +105,10 @@ src/
 │   │   ├── usage.ts      # observe.usage() — token tracking
 │   │   ├── tools.ts      # observe.tools() — tool call recording
 │   │   ├── duration.ts   # observe.duration() — turn timing
-│   │   └── log.ts        # observe.log() — structured JSON logging
+│   │   ├── log.ts        # observe.log() — structured JSON logging
+│   │   ├── metrics.ts    # observe.metrics() — OTel Meter API metrics
+│   │   ├── traces.ts     # observe.traces() — OTel distributed tracing
+│   │   └── otel-api.ts   # OTel API detection helper (shared)
 │   ├── model/
 │   │   ├── router.ts     # model.router() — complexity routing
 │   │   └── retry.ts      # model.retry() — exponential backoff
