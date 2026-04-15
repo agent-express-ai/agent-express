@@ -69,8 +69,11 @@ export async function resolveModel(modelId: string): Promise<LanguageModelV3> {
 
   // AI SDK providers export a factory function — try default export,
   // then named export matching the provider name (without hyphens).
+  // Use Object.hasOwn to avoid prototype properties (constructor, toString, etc.)
   const providerKey = provider.replace(/-/g, "")
-  const createModel = mod.default ?? mod[provider] ?? mod[providerKey]
+  const createModel = mod.default
+    ?? (Object.hasOwn(mod, provider) ? mod[provider] : undefined)
+    ?? (Object.hasOwn(mod, providerKey) ? mod[providerKey] : undefined)
 
   if (typeof createModel !== "function") {
     throw new Error(

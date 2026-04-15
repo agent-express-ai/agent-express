@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 import { Agent } from "../../src/agent.js"
 import { FunctionModel } from "../../src/test/function-model.js"
 import { observeMetrics } from "../../src/middleware/observe/metrics.js"

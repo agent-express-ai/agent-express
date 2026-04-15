@@ -239,12 +239,13 @@ export function observeLog(opts?: ObserveLogOptions): Middleware {
         }
 
         if (result.isError) {
+          const errorMsg = recordContent ? String(result.result) : "Tool execution failed"
           emit("warn", "tool:end", ctx.sessionId, ctx.turnIndex, agentName, {
             ...trace,
             turnId: ctx.turnId,
             durationMs: Date.now() - start,
             data,
-            error: { type: "ToolExecutionError", message: String(result.result) },
+            error: { type: "ToolExecutionError", message: errorMsg },
           })
         } else {
           emit(recordContent ? "debug" : "info", "tool:end", ctx.sessionId, ctx.turnIndex, agentName, {

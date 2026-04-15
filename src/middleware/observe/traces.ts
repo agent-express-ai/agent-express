@@ -248,14 +248,16 @@ export function observeTraces(opts?: ObserveTracesOptions): Middleware {
       try {
         const result = await next()
 
+        const toolExtraAttrs: Record<string, string | number | boolean | string[]> = {}
         if (recordContent) {
-          attrs["gen_ai.tool.call.result"] = JSON.stringify(result.result)
+          toolExtraAttrs["gen_ai.tool.call.result"] = JSON.stringify(result.result)
         }
 
         if (result.isError) {
-          t.endSpan(spanId, "error", { type: "ToolExecutionError", message: String(result.result) })
+          const errorMsg = recordContent ? String(result.result) : "Tool execution failed"
+          t.endSpan(spanId, "error", { type: "ToolExecutionError", message: errorMsg }, toolExtraAttrs)
         } else {
-          t.endSpan(spanId, "ok")
+          t.endSpan(spanId, "ok", undefined, toolExtraAttrs)
         }
         return result
       } catch (err) {
@@ -303,10 +305,14 @@ function createOtelTracker(tracer: import("@opentelemetry/api").Tracer): SpanTra
 function createStandaloneTracker(output?: (span: SpanData) => void): SpanTracker {
   const emit = output ?? (() => {})
   const pending = new Map<string, { name: string; traceId: string; spanId: string; parentId: string | undefined; startTime: number; attributes: Record<string, string | number | boolean | string[]> }>()
-  const currentTraceId = randomHex(16)
+  let currentTraceId = randomHex(16)
 
   return {
     startSpan(name, attributes, parentId) {
+      // Root span (no parent) starts a new trace — each session gets its own traceId
+      if (!parentId) {
+        currentTraceId = randomHex(16)
+      }
       const spanId = randomHex(8)
       pending.set(spanId, {
         name,

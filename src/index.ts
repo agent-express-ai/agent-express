@@ -143,6 +143,7 @@ export const observe = {
   /** OpenTelemetry-compatible distributed tracing. */
   traces: observeTraces,
 }
+export type { ObserveLogOptions } from "./middleware/observe/log.js"
 export type { ObserveMetricsOptions } from "./middleware/observe/metrics.js"
 export type { ObserveTracesOptions } from "./middleware/observe/traces.js"
 

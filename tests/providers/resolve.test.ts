@@ -46,4 +46,23 @@ describe("resolveModel — universal provider resolver", () => {
       'Invalid model identifier: "". Expected "provider/model-name" format',
     )
   })
+
+  it("blocks path traversal in provider name", async () => {
+    await expect(resolveModel("../malicious/model")).rejects.toThrow(
+      'Invalid provider name: "..". Provider must be a lowercase package name',
+    )
+  })
+
+  it("blocks uppercase and special chars in provider name", async () => {
+    await expect(resolveModel("Evil/model")).rejects.toThrow("Invalid provider name")
+    await expect(resolveModel("foo.bar/model")).rejects.toThrow("Invalid provider name")
+    await expect(resolveModel("foo_bar/model")).rejects.toThrow("Invalid provider name")
+  })
+
+  it("blocks prototype property names in provider", async () => {
+    // "constructor" passes the regex but Object.hasOwn prevents prototype access
+    await expect(resolveModel("constructor/model")).rejects.toThrow(
+      "Provider package @ai-sdk/constructor is not installed",
+    )
+  })
 })
