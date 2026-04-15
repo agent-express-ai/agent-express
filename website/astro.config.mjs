@@ -40,6 +40,7 @@ export default defineConfig({
             { label: "Structured Output", slug: "guides/structured-output" },
             { label: "Streaming", slug: "guides/events" },
             { label: "Errors", slug: "guides/errors" },
+            { label: "Observability", slug: "guides/observability" },
             { label: "Testing", slug: "guides/testing" },
             { label: "CLI", slug: "guides/cli" },
             {
@@ -50,7 +51,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Features",
+          label: "Built-in Middleware",
           items: [
             { label: "Overview", slug: "guides/builtins" },
             { label: "Guard", slug: "guides/builtins/guard" },

@@ -177,10 +177,28 @@ With `otel: true`, additionally emits `gen_ai.client.operation.duration` and `ge
 2. **Custom Meter** -- `meter` option for isolation or testing
 3. **Standalone callback** -- `output` option when `@opentelemetry/api` is not installed
 
+### Custom Meter
+
+Pass a custom `Meter` instance for isolation (e.g., separate exporter per agent) or testing:
+
+```typescript
+import { MeterProvider } from "@opentelemetry/sdk-metrics"
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus"
+
+const exporter = new PrometheusExporter({ port: 9464 })
+const provider = new MeterProvider({ readers: [exporter] })
+const meter = provider.getMeter("my-agent")
+
+agent.use(observe.metrics({ meter }))
+// Metrics exported to http://localhost:9464/metrics
+```
+
 **Hooks:** `session`, `turn`, `model`, `tool`.
 
 **State keys:**
 - `observe:metrics` -- `MetricsSnapshot` with session-scoped counts, tokens, and durations
+
+See the [Observability Guide](/guides/observability/) for full production setup examples.
 
 ---
 
@@ -231,4 +249,23 @@ Each session gets its own `traceId`. `gen_ai.*` attributes are always present on
 2. **Custom Tracer** -- `tracer` option for isolation or testing
 3. **Standalone callback** -- `output` option emits `SpanData` objects
 
+### Custom Tracer
+
+Pass a custom `Tracer` for isolation (e.g., separate exporter per agent) or testing:
+
+```typescript
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+
+const exporter = new OTLPTraceExporter({ url: "http://localhost:4318/v1/traces" })
+const provider = new NodeTracerProvider()
+provider.addSpanProcessor(new BatchSpanProcessor(exporter))
+const tracer = provider.getTracer("my-agent")
+
+agent.use(observe.traces({ tracer }))
+```
+
 **Hooks:** `session`, `turn`, `model`, `tool`.
+
+See the [Observability Guide](/guides/observability/) for full production setup examples.
