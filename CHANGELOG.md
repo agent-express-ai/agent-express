@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-16
+
+### Added
+
+- Universal provider resolver — any `@ai-sdk/*` provider works via `"provider/model"` string (Google, Mistral, Groq, DeepSeek, Amazon Bedrock, Azure, xAI, Cohere, and more)
+- `observe.metrics()` — OpenTelemetry Meter API metrics with 10 `agent_express_*` counters and histograms, AI-tuned bucket boundaries, optional `gen_ai.*` standard metrics
+- `observe.traces()` — OpenTelemetry distributed tracing with two span naming modes (framework and OTel GenAI conventions), `gen_ai.*` attributes, per-session traceId
+- `observe.log()` enhancements — `level`, `durationMs`, `error`, `agentName`, `turnId`, `recordContent`, `traceId`/`spanId` trace correlation
+- `@opentelemetry/api` as optional peer dependency (shared by metrics and traces)
+- Three export modes for metrics and traces: global OTel provider, custom instance, standalone callback
+- `SpanData`, `MetricEvent`, `MetricsSnapshot` types exported from `agent-express`
+- Observability production guide in docs
+
+### Changed
+
+- Provider resolver no longer hardcodes Anthropic/OpenAI — dynamically imports any `@ai-sdk/*` package
+- `LogEvent` extended with optional fields (backward-compatible)
+
+### Security
+
+- Provider name validation (`/^[a-z][a-z0-9-]*$/`) prevents path traversal in dynamic imports
+- `Object.hasOwn()` for provider factory lookup prevents prototype property access
+- Tool error messages redacted when `recordContent: false`
+
 ## [0.1.0] - 2026-04-06
 
 ### Added
