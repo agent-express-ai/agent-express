@@ -1,9 +1,9 @@
 ---
 title: Observability
-description: "Observability middleware: token usage, tool calls, duration, structured logging."
+description: "Observability middleware: token usage, tool calls, duration, structured logging, OpenTelemetry metrics and traces."
 ---
 
-Observability and telemetry middleware. Track token usage, record tool calls, measure duration, and emit structured logs.
+Observability and telemetry middleware. Track token usage, record tool calls, measure duration, emit structured logs, expose Prometheus metrics, and create OpenTelemetry distributed traces.
 
 ## observe.usage()
 
@@ -99,6 +99,7 @@ agent.use(observe.log({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `output` | `(event: LogEvent) => void` | JSON line to stderr | Custom output function |
+| `recordContent` | `boolean` | `false` | Log prompt/response content at `debug` level |
 
 Each `LogEvent` contains:
 
@@ -109,9 +110,125 @@ interface LogEvent {
   sessionId: string
   turnIndex: number
   data: Record<string, unknown>
+  level?: "debug" | "info" | "warn" | "error"
+  agentName?: string
+  turnId?: string         // present on turn/model/tool events
+  durationMs?: number     // present on end events
+  error?: { type: string; message: string }  // present on failures
+  traceId?: string        // present when OTel span context is active
+  spanId?: string         // present when OTel span context is active
 }
 ```
 
 **Hooks:** `session`, `turn`, `model`, `tool` -- logs start/end events for each.
 
 Event types emitted: `session:start`, `session:end`, `turn:start`, `turn:end`, `model:call`, `model:response`, `tool:start`, `tool:end`.
+
+Level mapping: `info` for normal lifecycle, `warn` for tool errors with recovery, `error` for failures, `debug` for content recording.
+
+When used together with `observe.traces()`, log events include `traceId` and `spanId` for log-trace correlation in observability platforms.
+
+---
+
+## observe.metrics()
+
+Tracks agent performance metrics via the [OpenTelemetry](https://opentelemetry.io/) Meter API. Provides 10 `agent_express_*` metrics (counters + histograms) with AI-tuned histogram bucket boundaries.
+
+```typescript
+function observeMetrics(opts?: ObserveMetricsOptions): Middleware
+```
+
+```typescript
+import { Agent, observe } from "agent-express"
+
+const metrics = observe.metrics()
+agent.use(metrics)
+
+const { state } = await agent.run("Hello").result
+const snapshot = state["observe:metrics"]
+// { modelCalls: 1, tokens: { input: 150, output: 85 }, ... }
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `otel` | `boolean` | `false` | Additionally emit `gen_ai.*` standard metrics |
+| `meter` | `Meter` | global MeterProvider | Custom OTel Meter instance |
+| `output` | `(event: MetricEvent) => void` | — | Standalone mode callback (no OTel dependency) |
+
+**Metrics emitted:**
+
+| Metric | Type | Attributes |
+|--------|------|------------|
+| `agent_express_model_calls_total` | Counter | `agent`, `model`, `provider` |
+| `agent_express_tool_calls_total` | Counter | `agent`, `tool` |
+| `agent_express_turns_total` | Counter | `agent` |
+| `agent_express_sessions_total` | Counter | `agent` |
+| `agent_express_errors_total` | Counter | `agent`, `error_source`, `error_type` |
+| `agent_express_tokens_total` | Counter | `agent`, `direction`, `model` |
+| `agent_express_model_duration_seconds` | Histogram | `agent`, `model`, `provider` |
+| `agent_express_tool_duration_seconds` | Histogram | `agent`, `tool` |
+| `agent_express_turn_duration_seconds` | Histogram | `agent` |
+| `agent_express_session_duration_seconds` | Histogram | `agent` |
+
+With `otel: true`, additionally emits `gen_ai.client.operation.duration` and `gen_ai.client.token.usage`.
+
+**Three modes:**
+1. **Global MeterProvider** (default when `@opentelemetry/api` installed) -- metrics flow to user-configured exporter (Prometheus, OTLP, etc.)
+2. **Custom Meter** -- `meter` option for isolation or testing
+3. **Standalone callback** -- `output` option when `@opentelemetry/api` is not installed
+
+**Hooks:** `session`, `turn`, `model`, `tool`.
+
+**State keys:**
+- `observe:metrics` -- `MetricsSnapshot` with session-scoped counts, tokens, and durations
+
+---
+
+## observe.traces()
+
+Creates [OpenTelemetry](https://opentelemetry.io/) distributed tracing spans for every lifecycle phase. Two span naming modes: framework terminology (default) or OTel GenAI conventions.
+
+```typescript
+function observeTraces(opts?: ObserveTracesOptions): Middleware
+```
+
+```typescript
+// Framework span names (default)
+agent.use(observe.traces())
+
+// OTel GenAI convention names
+agent.use(observe.traces({ otel: true }))
+
+// Standalone mode (no @opentelemetry/api needed)
+agent.use(observe.traces({
+  output: (span) => console.log(JSON.stringify(span))
+}))
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `otel` | `boolean` | `false` | Use OTel GenAI convention span names |
+| `recordContent` | `boolean` | `false` | Record prompts/responses in span attributes |
+| `tracer` | `Tracer` | global TracerProvider | Custom OTel Tracer instance |
+| `output` | `(span: SpanData) => void` | — | Standalone mode callback |
+
+**Span hierarchy:**
+
+```
+session.run {agent}          (or invoke_agent with otel: true)
+  ├── turn 0
+  │   ├── model.call {model} (or chat)
+  │   └── tool.call {tool}   (or execute_tool)
+  └── session.close {agent}  (or close_session)
+```
+
+Each session gets its own `traceId`. `gen_ai.*` attributes are always present on model/tool spans regardless of naming mode.
+
+**Framework attributes** on all spans: `agent_express.agent.name`, `agent_express.session.id`, `agent_express.turn.id`, `agent_express.turn.index`, `agent_express.model`, `agent_express.provider`, `agent_express.tool.name`, `agent_express.call.id`.
+
+**Three modes:**
+1. **Global TracerProvider** (default) -- spans flow to user-configured exporter (Jaeger, Tempo, etc.)
+2. **Custom Tracer** -- `tracer` option for isolation or testing
+3. **Standalone callback** -- `output` option emits `SpanData` objects
+
+**Hooks:** `session`, `turn`, `model`, `tool`.

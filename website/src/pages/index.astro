@@ -565,10 +565,14 @@ const description =
         <span>Works with</span>
         <span class="provider-name">Anthropic</span>
         <span class="provider-name">OpenAI</span>
-        <span style="color:#475569;font-style:italic;">+ more coming</span>
+        <span class="provider-name">Google</span>
+        <span class="provider-name">Mistral</span>
+        <span class="provider-name">Groq</span>
+        <span class="provider-name">DeepSeek</span>
+        <span style="color:#475569;font-style:italic;">+ any AI SDK provider</span>
       </div>
       <div class="badges">
-        <span class="badge"><span class="dot"></span> 247+ tests</span>
+        <span class="badge"><span class="dot"></span> 300+ tests</span>
         <span class="badge">TypeScript strict</span>
         <span class="badge">MIT license</span>
         <span class="badge">ESM only</span>
@@ -608,7 +612,7 @@ const description =
         <a href="/guides/builtins/observe/" class="feature-item">
           <span class="feature-icon">&#128200;</span>
           <span class="feature-name">Observability</span>
-          <span class="feature-desc">Usage, tools, duration, logs</span>
+          <span class="feature-desc">Logs, OTel metrics & traces</span>
         </a>
         <a href="/guides/events/" class="feature-item">
           <span class="feature-icon">&#9889;</span>
@@ -695,7 +699,7 @@ const description =
         </details>
         <details>
           <summary>What models are supported?</summary>
-          <div class="answer">Any model via the AI SDK provider format. Currently tested with Anthropic (Claude) and OpenAI (GPT). Use the <code>"provider/model"</code> string format, e.g., <code>"anthropic/claude-sonnet-4-6"</code> or <code>"openai/gpt-4o"</code>.</div>
+          <div class="answer">Any AI SDK v3 provider works out of the box. Install the provider package (e.g., <code>npm install @ai-sdk/google</code>) and use <code>"google/gemini-2.0-flash"</code>. Supports Anthropic, OpenAI, Google, Mistral, Groq, DeepSeek, Amazon Bedrock, Azure, xAI, Cohere, and more.</div>
         </details>
         <details>
           <summary>Can I use it with my existing Express/Hono/Fastify app?</summary>

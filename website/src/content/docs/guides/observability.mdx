@@ -1,0 +1,160 @@
+---
+title: Observability Guide
+description: "Production setup: wire metrics to Prometheus, traces to Jaeger, logs to your pipeline."
+---
+
+How to set up production observability for your AI agents with `observe.log()`, `observe.metrics()`, and `observe.traces()`. Each works independently -- use any combination.
+
+## Quick Setup
+
+```typescript
+import { Agent, observe } from "agent-express"
+
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "Customer support agent.",
+})
+
+agent
+  .use(observe.log())       // structured JSON logs → stderr
+  .use(observe.metrics())   // OTel metrics → user-configured exporter
+  .use(observe.traces())    // OTel traces → user-configured exporter
+```
+
+## Metrics with Prometheus
+
+```bash
+npm install @opentelemetry/api @opentelemetry/sdk-metrics @opentelemetry/exporter-prometheus
+```
+
+```typescript
+import { MeterProvider } from "@opentelemetry/sdk-metrics"
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus"
+
+// Configure OTel SDK (one-time, at app startup)
+const exporter = new PrometheusExporter({ port: 9464 })
+const meterProvider = new MeterProvider({ readers: [exporter] })
+
+// agent-express automatically uses the global MeterProvider
+agent.use(observe.metrics())
+
+// Prometheus scrapes http://localhost:9464/metrics
+```
+
+Metrics emitted:
+- `agent_express_model_calls_total`, `agent_express_tool_calls_total`, `agent_express_turns_total`, `agent_express_sessions_total`
+- `agent_express_errors_total` (with `error_source` and `error_type` attributes)
+- `agent_express_tokens_total` (with `direction` = input/output)
+- Duration histograms for model, tool, turn, and session
+
+## Traces with Jaeger / Grafana Tempo
+
+```bash
+npm install @opentelemetry/api @opentelemetry/sdk-trace-node @opentelemetry/exporter-trace-otlp-http
+```
+
+```typescript
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+
+// Configure OTel SDK
+const traceExporter = new OTLPTraceExporter({ url: "http://localhost:4318/v1/traces" })
+const tracerProvider = new NodeTracerProvider()
+tracerProvider.addSpanProcessor(new BatchSpanProcessor(traceExporter))
+tracerProvider.register()
+
+// Framework span names (default)
+agent.use(observe.traces())
+
+// Or OTel GenAI convention names for platform compatibility
+agent.use(observe.traces({ otel: true }))
+```
+
+Span hierarchy per session:
+```
+session.run support → turn 0 → model.call claude-sonnet-4-6
+                             → tool.call search_docs
+                    → turn 1 → model.call claude-sonnet-4-6
+                    → session.close support
+```
+
+## Logs with Pino / Grafana Loki / ELK
+
+Logs go to stderr by default as JSON lines (NDJSON). Route them anywhere with a custom `output` function:
+
+```typescript
+import pino from "pino"
+
+const logger = pino()
+
+agent.use(observe.log({
+  output: (event) => {
+    if (event.level === "error") logger.error(event)
+    else if (event.level === "warn") logger.warn(event)
+    else logger.info(event)
+  }
+}))
+```
+
+Every log event includes `level`, `agentName`, `sessionId`, `turnIndex`, and `durationMs` on end events. When `observe.traces()` is also active, events include `traceId` and `spanId` for log-trace correlation.
+
+## Log-Trace Correlation
+
+When using both `observe.log()` and `observe.traces()`, log events automatically include `traceId` and `spanId` fields. This enables click-through from a log entry to the corresponding trace in platforms like Grafana, Datadog, or Kibana.
+
+```typescript
+agent
+  .use(observe.log())
+  .use(observe.traces())
+
+// Log events now include:
+// { ..., traceId: "abc123...", spanId: "def456..." }
+```
+
+## Standalone Mode (No OTel Dependency)
+
+Both `observe.metrics()` and `observe.traces()` work without `@opentelemetry/api` via callback functions:
+
+```typescript
+// Metrics without OTel
+agent.use(observe.metrics({
+  output: (event) => {
+    // event: { name, type, attributes, value }
+    myMetricsSystem.record(event)
+  }
+}))
+
+// Traces without OTel
+agent.use(observe.traces({
+  output: (span) => {
+    // span: { name, traceId, spanId, startTime, endTime, attributes, status }
+    myTracingSystem.ingest(span)
+  }
+}))
+```
+
+## Content Recording
+
+By default, prompts and responses are NOT recorded in logs or traces (privacy). Opt in for debugging:
+
+```typescript
+agent.use(observe.log({ recordContent: true }))    // content at debug level
+agent.use(observe.traces({ recordContent: true }))  // content in span attributes
+```
+
+**Warning:** `recordContent: true` records full prompts, model responses, tool arguments, and tool results. These may contain PII, API keys, or other sensitive data. Do not enable in production without appropriate data handling controls.
+
+## Session-Scoped State
+
+All observe middleware write to session state for programmatic access:
+
+```typescript
+const { state } = await agent.run("Hello").result
+
+state["observe:usage"]    // { inputTokens: 150, outputTokens: 85 }
+state["observe:tools"]    // [{ name: "search", duration: 120, ... }]
+state["observe:duration"] // 1250 (ms)
+state["observe:metrics"]  // { modelCalls: 1, tokens: { input: 150, output: 85 }, ... }
+```
