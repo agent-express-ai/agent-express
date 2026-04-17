@@ -15,10 +15,10 @@ export interface RateLimitConfig {
 }
 
 /** Thrown when onExceeded is "throw". */
-export class RateLimitError extends Error {
+export class UserRateLimitError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = "RateLimitError"
+    this.name = "UserRateLimitError"
   }
 }
 
@@ -73,7 +73,7 @@ export function guardRateLimit(config?: RateLimitConfig): Middleware {
       const key = getKey(ctx)
       if (isExceeded(key)) {
         if (onExceeded === "throw") {
-          throw new RateLimitError(rateLimitMessage)
+          throw new UserRateLimitError(rateLimitMessage)
         }
         if (onExceeded === "skip") {
           return // silently skip

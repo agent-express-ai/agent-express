@@ -13,6 +13,20 @@ const BUCKETS = {
 /**
  * Configuration for the `observe.metrics()` middleware.
  */
+/**
+ * Custom state-to-metric mapping for middleware-specific metrics.
+ */
+export interface CustomMetricMapping {
+  /** State key to read (e.g., "search:file:sources"). */
+  stateKey: string
+  /** Metric name (e.g., "agent_express_rag_chunks_total"). */
+  metric: string
+  /** Metric type. */
+  type: "counter" | "histogram"
+  /** Extract value and attributes from the state value. */
+  extract: (value: unknown) => { value: number; attributes?: Record<string, string> }
+}
+
 export interface ObserveMetricsOptions {
   /** Emit OTel GenAI standard metrics alongside agent_express_* metrics. Default: false. */
   otel?: boolean
@@ -20,6 +34,8 @@ export interface ObserveMetricsOptions {
   meter?: import("@opentelemetry/api").Meter
   /** Custom output callback for standalone mode (when @opentelemetry/api is not installed). */
   output?: (event: MetricEvent) => void
+  /** Custom state-to-metric mappings for middleware-specific metrics. */
+  custom?: CustomMetricMapping[]
 }
 
 /** Internal interface for recording metrics — abstracts OTel vs standalone. */
@@ -129,6 +145,25 @@ export function observeMetrics(opts?: ObserveMetricsOptions): Middleware {
         const durationSec = (Date.now() - sessionStart) / 1000
         rec.histogramRecord("agent_express_session_duration_seconds", { agent: agentName }, durationSec)
         snapshot.duration.session = Date.now() - sessionStart
+
+        // Record custom state-to-metric mappings
+        if (opts?.custom) {
+          for (const mapping of opts.custom) {
+            const stateValue = ctx.state[mapping.stateKey]
+            if (stateValue !== undefined && stateValue !== null) {
+              try {
+                const extracted = mapping.extract(stateValue)
+                if (mapping.type === "counter") {
+                  rec.counterAdd(mapping.metric, extracted.attributes ?? {}, extracted.value)
+                } else {
+                  rec.histogramRecord(mapping.metric, extracted.attributes ?? {}, extracted.value)
+                }
+              } catch {
+                // Ignore extraction errors
+              }
+            }
+          }
+        }
       }
     },
 
