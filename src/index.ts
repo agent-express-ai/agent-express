@@ -43,6 +43,11 @@ export type {
   SpanData,
   MetricEvent,
   MetricsSnapshot,
+  Chunk,
+  SearchResult,
+  SessionStore,
+  SessionData,
+  PiiMapping,
   StateSchema,
   StateFieldDef,
 } from "./types.js"
