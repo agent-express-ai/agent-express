@@ -1,5 +1,6 @@
 {
   "name": "agent-express",
+  "workspaces": ["packages/*"],
   "version": "0.2.0",
   "description": "Minimalist middleware framework for building AI agents in TypeScript",
   "type": "module",

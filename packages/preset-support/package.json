@@ -1,0 +1,29 @@
+{
+  "name": "@agent-express/preset-support",
+  "version": "0.1.0",
+  "description": "Production-ready support bot preset for agent-express",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "agent-express": ">=0.2.0"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "keywords": ["ai", "agent", "support", "preset", "middleware"],
+  "author": "agent-express contributors",
+  "license": "MIT"
+}
