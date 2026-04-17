@@ -152,6 +152,14 @@ export type { ObserveLogOptions } from "./middleware/observe/log.js"
 export type { ObserveMetricsOptions } from "./middleware/observe/metrics.js"
 export type { ObserveTracesOptions } from "./middleware/observe/traces.js"
 
+// Search namespace
+import { searchFile } from "./middleware/search/file.js"
+export const search = {
+  /** Document/knowledge base search with RAG retrieval. */
+  file: searchFile,
+}
+export type { SearchFileConfig } from "./middleware/search/file.js"
+
 // Memory namespace
 import { memoryCompaction } from "./middleware/memory/compaction.js"
 export const memory = {
