@@ -50,13 +50,16 @@ Logs session, turn, model, and tool start/end events as `LogEvent` objects.
 By default, writes JSON lines to stderr — suitable for structured logging
 pipelines (Datadog, Grafana, ELK, etc.).
 
+Enhanced with: `level`, `agentName`, `turnId`, `durationMs`, `error`,
+`traceId`/`spanId` correlation, and opt-in `recordContent`.
+
 #### Parameters
 
 ##### opts?
 
-`ObserveLogOptions`
+[`ObserveLogOptions`](/reference/api/index/interfaces/observelogoptions/)
 
-Optional configuration with custom output function
+Optional configuration
 
 #### Returns
 
@@ -70,9 +73,48 @@ Middleware that logs all lifecycle events
 // Default: JSON lines to stderr
 agent.use(observe.log())
 
-// Custom output (e.g., pino):
-agent.use(observe.log({ output: (event) => pino.info(event) }))
+// Custom output with level-based routing:
+agent.use(observe.log({
+  output: (event) => {
+    if (event.level === "error") pino.error(event)
+    else pino.info(event)
+  }
+}))
+
+// With content recording (prompts/responses at debug level):
+agent.use(observe.log({ recordContent: true }))
 ```
+
+### metrics
+
+> **metrics**: (`opts?`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `observeMetrics`
+
+Prometheus/OpenMetrics metrics via OTel Meter API.
+
+Creates an `observe.metrics()` middleware that tracks agent performance metrics
+via the `@opentelemetry/api` Meter API.
+
+Two modes:
+- With `@opentelemetry/api` installed: creates counters/histograms via the Meter API.
+  User configures their own MeterProvider and exporter (Prometheus, OTLP, etc.).
+- Without: emits MetricEvent objects via `output()` callback.
+
+Session-scoped snapshots are written to `state['observe:metrics']`.
+Memory management and export format are the OTel SDK's responsibility, not ours.
+
+#### Parameters
+
+##### opts?
+
+[`ObserveMetricsOptions`](/reference/api/index/interfaces/observemetricsoptions/)
+
+Configuration options
+
+#### Returns
+
+[`Middleware`](/reference/api/index/interfaces/middleware/)
+
+Middleware
 
 ### tools
 
@@ -104,6 +146,36 @@ for (const call of calls) {
   console.log(`${call.name}: ${call.duration}ms`)
 }
 ```
+
+### traces
+
+> **traces**: (`opts?`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `observeTraces`
+
+OpenTelemetry-compatible distributed tracing.
+
+Creates an `observe.traces()` middleware that emits OpenTelemetry-compatible spans.
+
+Two modes:
+- With `@opentelemetry/api` installed: writes to global TracerProvider
+- Without: emits SpanData objects via `output()` callback
+
+Span names use framework terminology by default. Set `otel: true` for
+OTel GenAI convention names. GenAI attributes (`gen_ai.*`) are always present
+regardless of naming mode.
+
+#### Parameters
+
+##### opts?
+
+[`ObserveTracesOptions`](/reference/api/index/interfaces/observetracesoptions/)
+
+Configuration options
+
+#### Returns
+
+[`Middleware`](/reference/api/index/interfaces/middleware/)
+
+Middleware
 
 ### usage
 
