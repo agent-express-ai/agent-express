@@ -89,6 +89,8 @@ import { outputGuard } from "./middleware/guard/output.js"
 import { guardMaxIterations } from "./middleware/guard/max-iterations.js"
 import { guardTimeout } from "./middleware/guard/timeout.js"
 import { guardApprove } from "./middleware/guard/approve.js"
+import { guardPiiRedact } from "./middleware/guard/pii-redact.js"
+import { guardRateLimit } from "./middleware/guard/rate-limit.js"
 export const guard = {
   /** USD cost cap per session. */
   budget: budgetGuard,
@@ -102,6 +104,10 @@ export const guard = {
   timeout: guardTimeout,
   /** Human-in-the-loop tool approval. */
   approve: guardApprove,
+  /** PII detection and masking with restore for tools. */
+  piiRedact: guardPiiRedact,
+  /** Per-session/IP rate limiting with configurable strategies. */
+  rateLimit: guardRateLimit,
 }
 
 // Approval decision helpers (top-level exports for DX)
@@ -154,19 +160,27 @@ export type { ObserveTracesOptions } from "./middleware/observe/traces.js"
 
 // Search namespace
 import { searchFile } from "./middleware/search/file.js"
+import { searchWeb } from "./middleware/search/web.js"
 export const search = {
   /** Document/knowledge base search with RAG retrieval. */
   file: searchFile,
+  /** Web search tool — model calls when needed. */
+  web: searchWeb,
 }
 export type { SearchFileConfig } from "./middleware/search/file.js"
+export type { SearchWebConfig } from "./middleware/search/web.js"
 
 // Memory namespace
 import { memoryCompaction } from "./middleware/memory/compaction.js"
+import { memoryStore } from "./middleware/memory/store.js"
 export const memory = {
   /** Context window management with compaction strategies. */
   compaction: memoryCompaction,
+  /** Session persistence to external stores. */
+  store: memoryStore,
 }
 export type { CompactionConfig, CompactionStrategy } from "./middleware/memory/compaction.js"
+export type { MemoryStoreConfig } from "./middleware/memory/store.js"
 
 // Dev namespace
 import { devConsole } from "./middleware/dev/console.js"

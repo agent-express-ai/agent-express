@@ -1,7 +1,7 @@
 {
   "name": "@agent-express/preset-support",
   "version": "0.1.0",
-  "description": "Production-ready support bot preset for agent-express",
+  "description": "Middlewares preset for production-ready customer support bot",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
