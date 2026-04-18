@@ -7,5 +7,11 @@
  * @module preset-support
  */
 
-// Placeholder — implementations will be added in Phases 9-11
-export {}
+export { supportBot } from "./support-bot.js"
+export type { SupportBotConfig } from "./support-bot.js"
+
+export { guardTone } from "./tone.js"
+export type { ToneConfig, ToneStyle } from "./tone.js"
+
+export { agentEscalation } from "./escalation.js"
+export type { EscalationConfig } from "./escalation.js"

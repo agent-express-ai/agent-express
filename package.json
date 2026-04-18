@@ -25,7 +25,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "test": "vitest run",
+    "test": "npx vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
