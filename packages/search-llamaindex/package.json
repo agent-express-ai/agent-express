@@ -1,0 +1,30 @@
+{
+  "name": "@agent-express/search-llamaindex",
+  "version": "0.1.0",
+  "description": "LlamaIndex.TS RAG adapter for agent-express — full pipeline (160+ loaders, all vector DBs)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "echo 'tests run from root'",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "agent-express": ">=0.2.0",
+    "llamaindex": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "llamaindex": {
+      "optional": false
+    }
+  },
+  "files": ["dist/", "README.md"],
+  "license": "MIT"
+}
