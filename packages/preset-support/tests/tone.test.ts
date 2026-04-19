@@ -23,4 +23,29 @@ describe("guard.tone()", () => {
     })
     expect(middleware.model).toBeDefined()
   })
+
+  it("custom rules appended to instructions", () => {
+    const middleware = guardTone({
+      style: "friendly-professional",
+      rules: ["Use customer's name when known", "Always apologize first"],
+    })
+    expect(middleware.name).toBe("guard:tone")
+    expect(middleware.model).toBeDefined()
+  })
+
+  it("language option accepted", () => {
+    const middleware = guardTone({
+      style: "formal",
+      language: "es",
+    })
+    expect(middleware.name).toBe("guard:tone")
+  })
+
+  it("auto language option accepted", () => {
+    const middleware = guardTone({
+      style: "empathetic",
+      language: "auto",
+    })
+    expect(middleware.name).toBe("guard:tone")
+  })
 })

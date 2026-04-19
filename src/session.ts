@@ -224,12 +224,16 @@ export class Session {
     const turnOnion = composeHooks(this.internals.middlewares, "turn", turnBody)
     await turnOnion(turnCtx)
 
+    // Middleware may short-circuit (e.g., guard.rateLimit) by setting ctx.output without calling next().
+    // In that case turnBody never runs, so prefer ctx.output over the loop result.
+    const finalText = turnCtx.output ?? turnText
+
     // After onion completes (all middleware after-next has run), snapshot state and complete
     this.turnInProgress = false
-    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: turnText })
+    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: finalText })
 
     const result: RunResult = {
-      text: turnText,
+      text: finalText,
       state: snapshotState(this.store.state),
       data: turnData,
     }
