@@ -1,6 +1,6 @@
 ---
 title: Guard
-description: "Safety middleware: budget, input/output validation, timeouts, iteration limits, tool approval."
+description: "Safety middleware: budget, input/output validation, timeouts, iteration limits, tool approval, PII redaction, rate limiting, prompt injection detection."
 ---
 
 Safety and cost control middleware. Protect agents from runaway costs, bad inputs, unauthorized tool use, and infinite loops.
@@ -220,3 +220,62 @@ agent.use(tools.function({
   // or: requireApproval: (args) => args.path.startsWith("/important")
 }))
 ```
+
+---
+
+## guard.piiRedact()
+
+Detects and masks PII (personally identifiable information) in user messages before the LLM sees them. Maintains a per-session mapping so tools can access original values (e.g., email lookup).
+
+```typescript
+agent.use(guard.piiRedact())
+// "My email is john@example.com" → "My email is [EMAIL_1]"
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `types` | `PiiType[]` | all | Which types to detect: `"email"`, `"phone"`, `"creditCard"`, `"ssn"`, `"ip"` |
+| `custom` | `Array<{ pattern, placeholder }>` | — | Custom regex patterns |
+
+Detection order: creditCard → SSN → email → phone → IP (longer patterns first to prevent partial matches).
+
+**Restore mechanism**: Tools receive original PII values via the `tool` hook — the model sees `[EMAIL_1]` but `lookup_user({ email })` gets the real email.
+
+---
+
+## guard.rateLimit()
+
+Per-session or per-IP rate limiting with configurable behavior when limit is exceeded.
+
+```typescript
+agent.use(guard.rateLimit({
+  maxPerMinute: 60,
+  onExceeded: "message",  // "message" | "throw" | "skip"
+  message: "Please wait a moment...",
+}))
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxPerMinute` | `number` | `60` | Max requests per minute |
+| `by` | `"sessionId" \| "ip"` | `"sessionId"` | Rate limit key |
+| `onExceeded` | `"message" \| "throw" \| "skip"` | `"message"` | Behavior when limit hit |
+| `message` | `string` | `"Please wait..."` | Custom message (for `"message"` strategy) |
+
+---
+
+## injectionDetector()
+
+Built-in `InputValidator` for prompt injection detection. Use with `guard.input()`:
+
+```typescript
+import { guard, injectionDetector } from "agent-express"
+
+// Regex only (fast, default)
+agent.use(guard.input(injectionDetector()))
+
+// Regex + LLM classifier (production-recommended)
+agent.use(guard.input(injectionDetector({ llmClassifier: true })))
+```
+
+Catches patterns like "ignore previous instructions", "system prompt:", "you are now a", "reveal your system prompt", etc.

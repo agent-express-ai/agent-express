@@ -9,6 +9,7 @@
     <div class="tabs-container">
       <!-- Radio inputs for CSS-only tab switching -->
       <input type="radio" name="mw-tab" id="tab-guard" class="tab-radio" checked />
+      <input type="radio" name="mw-tab" id="tab-search" class="tab-radio" />
       <input type="radio" name="mw-tab" id="tab-observe" class="tab-radio" />
       <input type="radio" name="mw-tab" id="tab-model" class="tab-radio" />
       <input type="radio" name="mw-tab" id="tab-memory" class="tab-radio" />
@@ -17,6 +18,7 @@
 
       <div class="tab-bar">
         <label for="tab-guard" class="tab-label">guard</label>
+        <label for="tab-search" class="tab-label">search</label>
         <label for="tab-observe" class="tab-label">observe</label>
         <label for="tab-model" class="tab-label">model</label>
         <label for="tab-memory" class="tab-label">memory</label>
@@ -30,6 +32,12 @@
           <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">budget</span>({'{'} <span class="prop">limit</span>: <span class="num">5</span> {'}'}))     <span class="cmt">// $5 USD cost cap</span>
 <span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">approve</span>({'{'} <span class="prop">tool</span>: <span class="str">"email"</span> {'}'})) <span class="cmt">// require approval</span>
 <span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">guard</span>.<span class="fn">timeout</span>({'{'} <span class="prop">turn</span>: <span class="num">30_000</span> {'}'})) <span class="cmt">// 30s timeout</span></code></pre>
+        </div>
+
+        <!-- search panel -->
+        <div class="tab-panel panel-search">
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">search</span>.<span class="fn">file</span>({'{'} <span class="prop">retrieve</span>: <span class="obj">myRetriever</span> {'}'})) <span class="cmt">// RAG — knowledge base search</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">search</span>.<span class="fn">web</span>({'{'} <span class="prop">provider</span>: <span class="obj">braveProvider</span>() {'}'}))  <span class="cmt">// web search tool</span></code></pre>
         </div>
 
         <!-- observe panel -->
@@ -170,11 +178,12 @@
 
   /* Active tab styles — one rule per radio */
   #tab-guard:checked ~ .tab-bar .tab-label:nth-child(1),
-  #tab-observe:checked ~ .tab-bar .tab-label:nth-child(2),
-  #tab-model:checked ~ .tab-bar .tab-label:nth-child(3),
-  #tab-memory:checked ~ .tab-bar .tab-label:nth-child(4),
-  #tab-tools:checked ~ .tab-bar .tab-label:nth-child(5),
-  #tab-dev:checked ~ .tab-bar .tab-label:nth-child(6) {
+  #tab-search:checked ~ .tab-bar .tab-label:nth-child(2),
+  #tab-observe:checked ~ .tab-bar .tab-label:nth-child(3),
+  #tab-model:checked ~ .tab-bar .tab-label:nth-child(4),
+  #tab-memory:checked ~ .tab-bar .tab-label:nth-child(5),
+  #tab-tools:checked ~ .tab-bar .tab-label:nth-child(6),
+  #tab-dev:checked ~ .tab-bar .tab-label:nth-child(7) {
     background: #7c3aed;
     color: #f8fafc;
     font-weight: 600;
@@ -208,6 +217,7 @@
 
   /* Show active panel — one rule per radio */
   #tab-guard:checked ~ .tab-panels .panel-guard,
+  #tab-search:checked ~ .tab-panels .panel-search,
   #tab-observe:checked ~ .tab-panels .panel-observe,
   #tab-model:checked ~ .tab-panels .panel-model,
   #tab-memory:checked ~ .tab-panels .panel-memory,
