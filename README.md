@@ -75,12 +75,19 @@ agent
 
 | Namespace | Middleware | Description |
 |---|---|---|
-| `guard` | `budget`, `input`, `output`, `maxIterations`, `timeout`, `approve` | Safety and cost controls |
+| `guard` | `budget`, `input`, `output`, `maxIterations`, `timeout`, `approve`, `piiRedact`, `rateLimit` | Safety, cost, and compliance |
 | `observe` | `usage`, `tools`, `duration`, `log`, `metrics`, `traces` | Monitoring, metrics, and tracing |
+| `search` | `file`, `web` | Document search (RAG) and web search |
 | `model` | `retry`, `router` | LLM call management |
-| `memory` | `compaction` | Context window management |
+| `memory` | `compaction`, `store` | Context window and session persistence |
 | `tools` | `function`, `mcp` | Tool registration |
 | `dev` | `console` | Development utilities |
+
+**Presets** (separate packages):
+
+| Package | Preset | Description |
+|---|---|---|
+| `@agent-express/preset-support` | `supportBot()` | Production support bot with RAG, PII, escalation, tone |
 
 ## Writing Custom Middleware
 

@@ -31,10 +31,18 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 - `guard.maxIterations()` — loop iteration limit
 - `guard.timeout()` — turn/model timeouts
 - `guard.approve()` — human-in-the-loop tool approval (`approve`, `deny`, `modify` helpers)
+- `guard.piiRedact()` — PII detection and masking with restore for tools
+- `guard.rateLimit()` — per-session/IP rate limiting with configurable strategies
+- `search.file()` — document/knowledge base search (RAG) with tool/auto modes
+- `search.web()` — web search tool (Brave, Tavily, Exa adapters)
 - `memory.compaction()` — context window management (5 strategies)
+- `memory.store()` — session persistence (SQLite, Redis, Postgres, custom)
 - `tools.function()` — TypeScript function tools with Zod schemas
 - `tools.mcp()` — MCP server connection
 - `dev.console()` — full lifecycle terminal trace
+
+**Presets** (separate packages, `@agent-express/*`):
+- `@agent-express/preset-support` — `supportBot()` with tone, escalation, full middleware stack
 
 **RunResult:** Minimal — `{ text, state, data? }`. All metadata in state via middleware.
 

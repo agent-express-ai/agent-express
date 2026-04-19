@@ -1,0 +1,96 @@
+---
+title: Presets
+description: "Production-ready middleware compositions for common AI agent use cases."
+---
+
+Presets are pre-configured middleware stacks for common agent types. One function call gives you production-grade guardrails, search, observability, and more.
+
+## Support Bot Preset
+
+`@agent-express/preset-support` — production-ready customer support agent with RAG, PII protection, tone enforcement, escalation, and rate limiting.
+
+### Install
+
+```bash
+npm install @agent-express/preset-support
+npm install @agent-express/search-llamaindex @agent-express/embed-openai
+npm install @agent-express/session-sqlite @agent-express/search-brave
+```
+
+### Usage
+
+```typescript
+import { Agent, search, memory, tools } from "agent-express"
+import { supportBot } from "@agent-express/preset-support"
+import { llamaindexRetriever } from "@agent-express/search-llamaindex"
+import { openaiEmbed } from "@agent-express/embed-openai"
+import { braveProvider } from "@agent-express/search-brave"
+import { sqliteStore } from "@agent-express/session-sqlite"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent for Acme Corp.",
+})
+
+agent.use(supportBot({
+  fileSearch: search.file({
+    retrieve: llamaindexRetriever({
+      sources: ["./knowledge-base"],
+      embed: openaiEmbed(),
+    }),
+  }),
+  webSearch: search.web({ provider: braveProvider() }),
+  sessionStore: memory.store({ backend: sqliteStore() }),
+  escalation: tools.function({
+    name: "escalate_to_human",
+    description: "Transfer customer to human support agent",
+    schema: z.object({ reason: z.string() }),
+    execute: async ({ reason }) => `Connecting you with a human agent. Reason: ${reason}`,
+  }),
+}))
+```
+
+### What's included by default
+
+| Capability | Middleware | Default |
+|---|---|---|
+| Budget cap | `guard.budget()` | $0.50/session |
+| Turn timeout | `guard.timeout()` | 30 seconds |
+| PII redaction | `guard.piiRedact()` | All types (email, phone, CC, SSN, IP) |
+| Prompt injection | `guard.input(injectionDetector())` | Regex patterns |
+| Tone enforcement | `guard.tone()` | "friendly-professional" |
+| Context compaction | `memory.compaction()` | Hybrid, 8192 tokens |
+| Escalation safety net | `agent.escalation()` | After 5 unproductive turns |
+| Rate limiting | `guard.rateLimit()` | 60/min per session |
+| Logging | `observe.log()` | JSON to stderr |
+| Metrics | `observe.metrics()` | OTel Meter API |
+
+### Customization
+
+Every default is overridable. Set any option to `false` to disable:
+
+```typescript
+supportBot({
+  budget: 2.00,                    // override budget
+  pii: false,                      // disable PII redaction
+  tone: "formal",                  // change tone style
+  escalationAfter: 3,              // escalate faster
+  rateLimit: { maxPerMinute: 30 }, // stricter rate limit
+})
+```
+
+### Escalation
+
+Primary escalation is your tool — the model decides when to call it based on user intent, frustration, or inability to help. The safety net (`escalationAfter`) is a fallback that force-escalates after N unproductive turns if the model doesn't act.
+
+### Available Tone Styles
+
+`"friendly-professional"` (default), `"formal"`, `"casual"`, `"empathetic"`, `"concise"`, `"educational"`
+
+## Future Presets
+
+- **Research Agent** — `@agent-express/preset-research` (Phase 011)
+- **Coding Agent** — `@agent-express/preset-coding` (Phase 012)
+- **Data Agent** — `@agent-express/preset-data` (Phase 013)
