@@ -1,0 +1,13 @@
+{
+  "name": "@agent-express/session-redis",
+  "version": "0.1.0",
+  "description": "Redis session store adapter for agent-express",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsup src/index.ts --format esm --dts", "test": "echo 'tests run from root'" },
+  "peerDependencies": { "agent-express": ">=0.2.0" },
+  "dependencies": { "ioredis": "^5.0.0" },
+  "files": ["dist/"], "license": "MIT"
+}
