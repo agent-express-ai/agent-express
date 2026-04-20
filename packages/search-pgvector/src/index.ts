@@ -19,8 +19,19 @@ export interface PgvectorRetrieverConfig {
   topK?: number
 }
 
+/** Validates a SQL identifier (table/column name) to prevent injection. */
+function validateIdentifier(name: string, label: string): void {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid ${label}: "${name}". Only alphanumeric characters and underscores are allowed.`)
+  }
+}
+
 export function pgvectorRetriever(config: PgvectorRetrieverConfig): (query: string) => Promise<Chunk[]> {
   const { connectionString, table = "documents", textColumn = "content", vectorColumn = "embedding", embed, topK = 5 } = config
+
+  validateIdentifier(table, "table name")
+  validateIdentifier(textColumn, "text column name")
+  validateIdentifier(vectorColumn, "vector column name")
 
   return async (query: string): Promise<Chunk[]> => {
     const vector = await embed(query)

@@ -23,7 +23,7 @@ export function openaiStore(config?: OpenAIStoreConfig): SessionStore {
   return {
     async load(sessionId) {
       try {
-        const res = await fetch(`https://api.openai.com/v1/conversations/${sessionId}/items`, { headers })
+        const res = await fetch(`https://api.openai.com/v1/conversations/${sessionId}/items`, { headers, signal: AbortSignal.timeout(30_000) })
         if (!res.ok) return null
         const data = await res.json() as { data: Array<{ type: string; role?: string; content?: Array<{ text: string }> }> }
         const history: Message[] = (data.data ?? [])
@@ -45,7 +45,7 @@ export function openaiStore(config?: OpenAIStoreConfig): SessionStore {
     },
 
     async delete(sessionId) {
-      await fetch(`https://api.openai.com/v1/conversations/${sessionId}`, { method: "DELETE", headers })
+      await fetch(`https://api.openai.com/v1/conversations/${sessionId}`, { method: "DELETE", headers, signal: AbortSignal.timeout(30_000) })
     },
 
     async add(sessionId, message) {
@@ -53,11 +53,12 @@ export function openaiStore(config?: OpenAIStoreConfig): SessionStore {
         method: "POST",
         headers,
         body: JSON.stringify({ type: "message", role: message.role, content: [{ type: "text", text: typeof message.content === "string" ? message.content : JSON.stringify(message.content) }] }),
+        signal: AbortSignal.timeout(30_000),
       })
     },
 
     async list(sessionId, opts) {
-      const res = await fetch(`https://api.openai.com/v1/conversations/${sessionId}/items`, { headers })
+      const res = await fetch(`https://api.openai.com/v1/conversations/${sessionId}/items`, { headers, signal: AbortSignal.timeout(30_000) })
       if (!res.ok) return []
       const data = await res.json() as { data: Array<{ type: string; role?: string; content?: Array<{ text: string }> }> }
       let messages = (data.data ?? [])

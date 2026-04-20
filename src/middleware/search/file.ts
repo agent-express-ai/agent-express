@@ -1,4 +1,4 @@
-import type { Middleware, ModelContext, TurnContext } from "../../middleware.js"
+import type { Middleware, ModelContext } from "../../middleware.js"
 import type { Chunk, ModelResponse, Tool } from "../../types.js"
 
 /**
@@ -87,6 +87,10 @@ export function searchFile(config: SearchFileConfig): Middleware {
   }
 
   if (mode === "tool") {
+    // Cache last retrieval results to avoid double API calls.
+    // The execute function stores results here; the tool hook reads them.
+    let lastRetrievedChunks: Chunk[] = []
+
     // Tool mode: register search_knowledge tool, model calls it
     const searchTool: Tool = {
       name: "search_knowledge",
@@ -107,6 +111,8 @@ export function searchFile(config: SearchFileConfig): Middleware {
         const selected = chunks
           .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
           .slice(0, topK)
+        // Cache for the tool hook to reuse
+        lastRetrievedChunks = selected
         // Return formatted results as tool output
         return selected
           .map((c, i) => {
@@ -134,17 +140,10 @@ export function searchFile(config: SearchFileConfig): Middleware {
 
       async tool(ctx, next) {
         const result = await next()
-        // Track sources when search_knowledge tool is called
+        // Track sources when search_knowledge tool is called, using cached results
         if (ctx.tool.name === "search_knowledge") {
-          try {
-            const query = (ctx.args as { query: string }).query
-            const chunks = await retrieve(query)
-            const selected = chunks
-              .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-              .slice(0, topK)
-            ctx.state["search:file:sources"] = selected
-          } catch {
-            // Ignore tracking errors
+          if (lastRetrievedChunks.length > 0) {
+            ctx.state["search:file:sources"] = lastRetrievedChunks
           }
         }
         return result

@@ -38,6 +38,8 @@ export function guardRateLimit(config?: RateLimitConfig): Middleware {
 
   // In-memory sliding window: key → array of timestamps
   const windows = new Map<string, number[]>()
+  /** Maximum number of tracked keys to prevent unbounded memory growth. */
+  const MAX_KEYS = 10_000
 
   function getKey(ctx: TurnContext): string {
     if (by === "ip") {
@@ -51,6 +53,11 @@ export function guardRateLimit(config?: RateLimitConfig): Middleware {
     const windowMs = 60_000
     let timestamps = windows.get(key)
     if (!timestamps) {
+      // Evict oldest keys if at capacity
+      if (windows.size >= MAX_KEYS) {
+        const oldestKey = windows.keys().next().value as string
+        windows.delete(oldestKey)
+      }
       timestamps = []
       windows.set(key, timestamps)
     }
@@ -59,10 +66,18 @@ export function guardRateLimit(config?: RateLimitConfig): Middleware {
     while (timestamps.length > 0 && timestamps[0]! < cutoff) {
       timestamps.shift()
     }
+    // Clean up empty entries to prevent memory leak
+    if (timestamps.length === 0) {
+      windows.delete(key)
+    }
     if (timestamps.length >= maxPerMinute) {
       return true
     }
     timestamps.push(now)
+    // Re-add key if it was deleted (entry had expired but new request is allowed)
+    if (!windows.has(key)) {
+      windows.set(key, timestamps)
+    }
     return false
   }
 

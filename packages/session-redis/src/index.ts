@@ -46,15 +46,17 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
     async save(sessionId, data) {
       const r = await getClient()
       const { history, ...rest } = data
-      await r.set(key(sessionId), JSON.stringify(rest))
-      await r.del(msgsKey(sessionId))
+      const pipeline = r.multi()
+      pipeline.set(key(sessionId), JSON.stringify(rest))
+      pipeline.del(msgsKey(sessionId))
       if (history.length > 0) {
-        await r.rpush(msgsKey(sessionId), ...history.map(m => JSON.stringify(m)))
+        pipeline.rpush(msgsKey(sessionId), ...history.map(m => JSON.stringify(m)))
       }
       if (ttl) {
-        await r.expire(key(sessionId), ttl)
-        await r.expire(msgsKey(sessionId), ttl)
+        pipeline.expire(key(sessionId), ttl)
+        pipeline.expire(msgsKey(sessionId), ttl)
       }
+      await pipeline.exec()
     },
 
     async delete(sessionId) {

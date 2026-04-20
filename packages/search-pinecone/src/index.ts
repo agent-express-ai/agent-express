@@ -30,6 +30,7 @@ export function pineconeRetriever(config: PineconeRetrieverConfig): (query: stri
       method: "POST",
       headers: { "Api-Key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!response.ok) throw new Error(`Pinecone query failed: ${response.status}`)

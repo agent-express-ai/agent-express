@@ -68,4 +68,54 @@ describe("supportBot()", () => {
     const middlewares = supportBot({ escalationAfter: 3 })
     expect(middlewares.some(m => m.name === "support:escalation")).toBe(true)
   })
+
+  it("includes budget guard by default", () => {
+    const middlewares = supportBot()
+    expect(middlewares.some(m => m.name === "guard:budget")).toBe(true)
+  })
+
+  it("budget: false disables budget guard", () => {
+    const middlewares = supportBot({ budget: false })
+    expect(middlewares.some(m => m.name === "guard:budget")).toBe(false)
+  })
+
+  it("custom budget value", () => {
+    const middlewares = supportBot({ budget: 1.0 })
+    expect(middlewares.some(m => m.name === "guard:budget")).toBe(true)
+  })
+
+  it("includes timeout guard by default", () => {
+    const middlewares = supportBot()
+    expect(middlewares.some(m => m.name === "guard:timeout")).toBe(true)
+  })
+
+  it("timeout: false disables timeout guard", () => {
+    const middlewares = supportBot({ timeout: false })
+    expect(middlewares.some(m => m.name === "guard:timeout")).toBe(false)
+  })
+
+  it("includes PII redaction by default", () => {
+    const middlewares = supportBot()
+    expect(middlewares.some(m => m.name === "guard:piiRedact")).toBe(true)
+  })
+
+  it("pii: false disables PII redaction", () => {
+    const middlewares = supportBot({ pii: false })
+    expect(middlewares.some(m => m.name === "guard:piiRedact")).toBe(false)
+  })
+
+  it("includes rate limiting by default", () => {
+    const middlewares = supportBot()
+    expect(middlewares.some(m => m.name === "guard:rateLimit")).toBe(true)
+  })
+
+  it("rateLimit: false disables rate limiting", () => {
+    const middlewares = supportBot({ rateLimit: false })
+    expect(middlewares.some(m => m.name === "guard:rateLimit")).toBe(false)
+  })
+
+  it("custom rateLimit config", () => {
+    const middlewares = supportBot({ rateLimit: { maxPerMinute: 30, by: "ip" } })
+    expect(middlewares.some(m => m.name === "guard:rateLimit")).toBe(true)
+  })
 })

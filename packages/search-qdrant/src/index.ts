@@ -21,6 +21,13 @@ export interface QdrantRetrieverConfig {
 export function qdrantRetriever(config: QdrantRetrieverConfig): (query: string) => Promise<Chunk[]> {
   const { url = "http://localhost:6333", collection, apiKey, embed, topK = 5 } = config
 
+  if (apiKey && url.startsWith("http://")) {
+    const host = new URL(url).hostname
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+      console.warn(`[agent-express/search-qdrant] WARNING: API key is sent over plain HTTP to "${url}". Use HTTPS for non-localhost connections to protect credentials.`)
+    }
+  }
+
   return async (query: string): Promise<Chunk[]> => {
     const vector = await embed(query)
     const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -30,6 +37,7 @@ export function qdrantRetriever(config: QdrantRetrieverConfig): (query: string) 
       method: "POST",
       headers,
       body: JSON.stringify({ vector, limit: topK, with_payload: true }),
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!response.ok) throw new Error(`Qdrant search failed: ${response.status}`)

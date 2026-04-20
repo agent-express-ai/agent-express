@@ -1,4 +1,5 @@
-import type { Middleware, Tool } from "agent-express"
+import type { Middleware, Tool, PiiType } from "agent-express"
+import { guard } from "agent-express"
 import { guardTone } from "./tone.js"
 import { agentEscalation } from "./escalation.js"
 import type { ToneStyle } from "./tone.js"
@@ -12,7 +13,7 @@ export interface SupportBotConfig {
   /** Turn timeout in ms. Default: 30000. Set false to disable. */
   timeout?: number | false
   /** PII redaction config or false to disable. Default: all types. */
-  pii?: { types?: string[]; custom?: Array<{ pattern: RegExp; placeholder: string }> } | false
+  pii?: { types?: PiiType[]; custom?: Array<{ pattern: RegExp; placeholder: string }> } | false
   /** Tone style or false to disable. Default: "friendly-professional". */
   tone?: ToneStyle | false
   /** Developer's escalation tool. Recommended — without it, only safety net works. */
@@ -94,6 +95,30 @@ export function supportBot(config?: SupportBotConfig): Middleware[] {
   // Add session store if provided
   if (config?.sessionStore) {
     middlewares.push(config.sessionStore)
+  }
+
+  // Add budget guard (default: $0.50 cap)
+  const budget = config?.budget
+  if (budget !== false) {
+    middlewares.push(guard.budget({ limit: typeof budget === "number" ? budget : 0.50 }))
+  }
+
+  // Add timeout guard (default: 30s turn timeout)
+  const timeout = config?.timeout
+  if (timeout !== false) {
+    middlewares.push(guard.timeout({ turn: typeof timeout === "number" ? timeout : 30000 }))
+  }
+
+  // Add PII redaction (default: all types)
+  const pii = config?.pii
+  if (pii !== false) {
+    middlewares.push(guard.piiRedact(pii === undefined ? {} : pii))
+  }
+
+  // Add rate limiting (default: 60/min)
+  const rateLimit = config?.rateLimit
+  if (rateLimit !== false) {
+    middlewares.push(guard.rateLimit(typeof rateLimit === "object" ? rateLimit : {}))
   }
 
   // Add tone (default: friendly-professional)

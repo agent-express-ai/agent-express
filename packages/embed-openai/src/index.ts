@@ -52,6 +52,7 @@ export function openaiEmbed(config?: OpenAIEmbedConfig): (text: string) => Promi
         input: text,
         model,
       }),
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!response.ok) {

@@ -54,6 +54,7 @@ export function braveProvider(config?: BraveProviderConfig): (query: string) => 
         "Accept-Encoding": "gzip",
         "X-Subscription-Token": apiKey,
       },
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!response.ok) {

@@ -20,6 +20,7 @@ export function tavilyProvider(config?: TavilyProviderConfig): (query: string) =
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey, query, max_results: config?.maxResults ?? 5 }),
+      signal: AbortSignal.timeout(30_000),
     })
     if (!response.ok) throw new Error(`Tavily search failed: ${response.status}`)
     const data = await response.json() as { results: Array<{ title: string; url: string; content: string }> }

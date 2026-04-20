@@ -5,7 +5,11 @@ import type { InputValidationResult } from "./input.js"
  * Configuration for the `injectionDetector()` validator.
  */
 export interface InjectionDetectorConfig {
-  /** Enable LLM-based classifier (extra LLM call per turn). Default: false (regex only). */
+  /** Enable enhanced heuristic patterns beyond basic regex. Default: false (basic regex only). */
+  enhanced?: boolean
+  /**
+   * @deprecated Use `enhanced` instead. Alias kept for backwards compatibility.
+   */
   llmClassifier?: boolean
 }
 
@@ -30,7 +34,7 @@ const INJECTION_PATTERNS: RegExp[] = [
 /**
  * Creates an `injectionDetector()` validator for use with `guard.input()`.
  *
- * Dual mode: regex (fast, default) + optional LLM classifier.
+ * Dual mode: regex (fast, default) + optional enhanced heuristics.
  * Returns an `InputValidator` function compatible with the existing `guard.input()` API.
  *
  * @param config - Detection mode options
@@ -43,12 +47,12 @@ const INJECTION_PATTERNS: RegExp[] = [
  * // Regex only (fast, default)
  * agent.use(guard.input(injectionDetector()))
  *
- * // Regex + LLM classifier (production-recommended)
- * agent.use(guard.input(injectionDetector({ llmClassifier: true })))
+ * // Regex + enhanced heuristics (production-recommended)
+ * agent.use(guard.input(injectionDetector({ enhanced: true })))
  * ```
  */
 export function injectionDetector(config?: InjectionDetectorConfig): (ctx: ModelContext) => Promise<InputValidationResult> | InputValidationResult {
-  const useLlm = config?.llmClassifier ?? false
+  const useEnhanced = config?.enhanced ?? config?.llmClassifier ?? false
 
   return async (ctx: ModelContext): Promise<InputValidationResult> => {
     // Check user messages for injection patterns
@@ -62,25 +66,21 @@ export function injectionDetector(config?: InjectionDetectorConfig): (ctx: Model
         if (pattern.test(content)) {
           return {
             ok: false,
-            reason: `Potential prompt injection detected: matches pattern "${pattern.source}"`,
+            reason: "Potential prompt injection detected",
           }
         }
       }
     }
 
-    // LLM classifier pass (optional, extra model call)
-    if (useLlm) {
+    // Enhanced heuristic pass (optional, additional patterns)
+    if (useEnhanced) {
       // Get the latest user message
       const userMessages = ctx.messages.filter(m => m.role === "user")
       const lastUser = userMessages[userMessages.length - 1]
       const content = typeof lastUser?.content === "string" ? lastUser.content : ""
 
       if (content) {
-        // Use a lightweight classification prompt
-        // Note: This uses the agent's own model — no separate model needed
-        // The classification is done by inspecting the content heuristically
-        // Full LLM-based classification would require calling ctx model separately
-        // For now, enhanced heuristics as "LLM classifier" placeholder
+        // Enhanced heuristic patterns for common jailbreak/bypass attempts
         const suspicious = [
           /\bDAN\b/,
           /\bjailbreak\b/i,
@@ -93,7 +93,7 @@ export function injectionDetector(config?: InjectionDetectorConfig): (ctx: Model
           if (pattern.test(content)) {
             return {
               ok: false,
-              reason: `Potential prompt injection detected by classifier: "${pattern.source}"`,
+              reason: "Potential prompt injection detected",
             }
           }
         }

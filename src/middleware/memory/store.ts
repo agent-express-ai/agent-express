@@ -30,12 +30,13 @@ export interface MemoryStoreConfig {
  */
 export function memoryStore(config: MemoryStoreConfig): Middleware {
   const { backend, ttl } = config
-  let backendAvailable = true
 
   return {
     name: "memory:store",
 
     async session(ctx: SessionContext, next: () => Promise<void>): Promise<void> {
+      let backendAvailable = true
+
       // Load session if it exists
       try {
         const data = await backend.load(ctx.sessionId)
@@ -49,7 +50,6 @@ export function memoryStore(config: MemoryStoreConfig): Middleware {
             ctx.history.push(msg)
           }
         }
-        backendAvailable = true
       } catch {
         // Fallback to in-memory — log warning but don't block
         backendAvailable = false

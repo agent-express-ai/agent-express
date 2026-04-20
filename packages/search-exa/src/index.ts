@@ -20,6 +20,7 @@ export function exaProvider(config?: ExaProviderConfig): (query: string) => Prom
       method: "POST",
       headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ query, numResults: config?.numResults ?? 5, contents: { text: true } }),
+      signal: AbortSignal.timeout(30_000),
     })
     if (!response.ok) throw new Error(`Exa search failed: ${response.status}`)
     const data = await response.json() as { results: Array<{ title: string; url: string; text?: string }> }

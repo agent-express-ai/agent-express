@@ -17,6 +17,7 @@ interface EscalationState {
   reason?: string
   turnIndex?: number
   counter: number
+  toolName?: string
 }
 
 /**
@@ -41,9 +42,6 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
   const escalationMessage = config?.message ?? "Let me connect you with a human agent who can help."
   const watchToolName = config?.toolName ?? "escalate_to_human"
 
-  let counter = 0
-  let triggered = false
-
   return {
     name: "support:escalation",
 
@@ -54,7 +52,9 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
     },
 
     async turn(ctx: TurnContext, next: () => Promise<void>): Promise<void> {
-      if (triggered) {
+      const escalationState = ctx.state["support:escalation"] as EscalationState
+
+      if (escalationState.triggered) {
         // Already escalated — keep responding with escalation message
         ctx.output = escalationMessage
         return
@@ -62,17 +62,15 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
 
       await next()
 
+      let counter = escalationState.counter
+
       // Check if model called any tool (including escalation tool)
       const toolsCalled = ctx.state["observe:tools"] as Array<{ name: string }> | undefined
-      const lastTurnTools = toolsCalled?.filter(() => true) ?? []
+      const lastTurnTools = [...(toolsCalled ?? [])]
 
       if (lastTurnTools.length > 0) {
         // Model is actively working or escalated — reset counter
         counter = 0
-        // Check if escalation tool was called
-        if (lastTurnTools.some(t => t.name === watchToolName)) {
-          counter = 0 // Model handled escalation
-        }
       } else {
         // No tool calls — unproductive turn
         counter++
@@ -80,8 +78,6 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
 
       // Check threshold
       if (counter >= threshold) {
-        triggered = true
-        counter = 0
         ctx.output = escalationMessage
         // Emit escalation as error event (StreamEvent doesn't have escalation type yet)
         ctx.emit({ type: "error", error: new Error(`Escalation safety-net triggered after ${threshold} unproductive turns`) })
@@ -91,11 +87,13 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
           reason: "safety-net",
           turnIndex: ctx.turnIndex,
           counter: 0,
+          toolName: watchToolName,
         }
       } else {
         ctx.state["support:escalation"] = {
           triggered: false,
           counter,
+          toolName: watchToolName,
         }
       }
     },

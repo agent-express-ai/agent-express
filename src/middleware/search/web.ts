@@ -29,6 +29,10 @@ export interface SearchWebConfig {
 export function searchWeb(config: SearchWebConfig): Middleware {
   const { provider } = config
 
+  // Cache last search results to avoid double API calls.
+  // The execute function stores results here; the tool hook reads them.
+  let lastSearchResults: SearchResult[] = []
+
   const webSearchTool: Tool = {
     name: "web_search",
     description: "Search the web for current information. Use when the knowledge base doesn't have the answer, or when you need up-to-date information like pricing, news, or policies.",
@@ -48,12 +52,17 @@ export function searchWeb(config: SearchWebConfig): Middleware {
       try {
         results = await provider(query)
       } catch {
+        lastSearchResults = []
         return "Web search failed. Please try answering from your own knowledge."
       }
 
       if (results.length === 0) {
+        lastSearchResults = []
         return "No results found for this search query."
       }
+
+      // Cache for the tool hook to reuse
+      lastSearchResults = results
 
       return results
         .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
@@ -78,13 +87,10 @@ export function searchWeb(config: SearchWebConfig): Middleware {
 
     async tool(ctx, next) {
       const result = await next()
+      // Track results when web_search tool is called, using cached results
       if (ctx.tool.name === "web_search") {
-        try {
-          const query = (ctx.args as { query: string }).query
-          const results = await provider(query)
-          ctx.state["search:web:results"] = results
-        } catch {
-          // Ignore tracking errors
+        if (lastSearchResults.length > 0) {
+          ctx.state["search:web:results"] = lastSearchResults
         }
       }
       return result

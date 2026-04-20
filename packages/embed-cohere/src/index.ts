@@ -20,6 +20,7 @@ export function cohereEmbed(config?: CohereEmbedConfig): (text: string) => Promi
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ texts: [text], model, input_type: "search_query" }),
+      signal: AbortSignal.timeout(30_000),
     })
     if (!response.ok) throw new Error(`Cohere embedding failed: ${response.status}`)
     const data = await response.json() as { embeddings: number[][] }
