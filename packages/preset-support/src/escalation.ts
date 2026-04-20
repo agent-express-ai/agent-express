@@ -1,4 +1,4 @@
-import type { Middleware, TurnContext } from "agent-express"
+import type { Middleware, TurnContext, ModelContext, ModelResponse } from "agent-express"
 
 /**
  * Configuration for the `agentEscalation()` safety net middleware.
@@ -49,6 +49,17 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
       "support:escalation": {
         default: { triggered: false, counter: 0 } as EscalationState,
       },
+      "support:escalation:hadTools": {
+        default: false,
+      },
+    },
+
+    async model(ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
+      const response = await next()
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        ctx.state["support:escalation:hadTools"] = true
+      }
+      return response
     },
 
     async turn(ctx: TurnContext, next: () => Promise<void>): Promise<void> {
@@ -60,15 +71,12 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
         return
       }
 
+      ctx.state["support:escalation:hadTools"] = false
       await next()
 
       let counter = escalationState.counter
 
-      // Check if model called any tool (including escalation tool)
-      const toolsCalled = ctx.state["observe:tools"] as Array<{ name: string }> | undefined
-      const lastTurnTools = [...(toolsCalled ?? [])]
-
-      if (lastTurnTools.length > 0) {
+      if (ctx.state["support:escalation:hadTools"] as boolean) {
         // Model is actively working or escalated — reset counter
         counter = 0
       } else {
@@ -79,7 +87,6 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
       // Check threshold
       if (counter >= threshold) {
         ctx.output = escalationMessage
-        // Emit escalation as error event (StreamEvent doesn't have escalation type yet)
         ctx.emit({ type: "error", error: new Error(`Escalation safety-net triggered after ${threshold} unproductive turns`) })
 
         ctx.state["support:escalation"] = {

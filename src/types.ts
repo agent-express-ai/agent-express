@@ -336,10 +336,10 @@ export interface SessionData {
   state: Record<string, unknown>
   /** Conversation message history. */
   history: Message[]
-  /** ISO 8601 creation timestamp. */
-  createdAt: string
-  /** ISO 8601 last update timestamp. */
-  updatedAt: string
+  /** Creation timestamp (epoch ms). */
+  createdAt: number
+  /** Last update timestamp (epoch ms). */
+  updatedAt: number
 }
 
 // ─── PII ──────────────────────────────────────────────
@@ -353,9 +353,15 @@ export interface PiiMapping {
   placeholder: string
   /** Original PII value (e.g., "john@example.com"). */
   original: string
-  /** PII type (e.g., "email", "phone", "creditCard"). */
-  type: string
+  /** PII type — built-in ("email", "phone", etc.) or custom pattern name. */
+  type: PiiType | (string & {})
 }
+
+/**
+ * Built-in PII types supported by `guard.piiRedact()`.
+ * Custom patterns can define additional string types.
+ */
+export type PiiType = "email" | "phone" | "creditCard" | "ssn" | "ip"
 
 // ─── Session ──────────────────────────────────────────
 

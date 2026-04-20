@@ -1,8 +1,7 @@
 import type { Middleware, ModelContext, ToolContext } from "../../middleware.js"
-import type { Message, MessagePart, ModelResponse, ToolResult, PiiMapping } from "../../types.js"
+import type { Message, MessagePart, ModelResponse, ToolResult, PiiMapping, PiiType } from "../../types.js"
 
-/** Supported PII types for detection. */
-export type PiiType = "email" | "phone" | "creditCard" | "ssn" | "ip"
+export type { PiiType }
 
 /**
  * Configuration for the `guard.piiRedact()` middleware.

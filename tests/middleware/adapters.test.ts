@@ -131,8 +131,8 @@ describe("Adapter packages — factory functions", () => {
     await store.save("s1", {
       state: { count: 42 },
       history: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi!" }],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     })
     const loaded = await store.load("s1")
     expect(loaded).not.toBeNull()
@@ -166,7 +166,7 @@ describe("Adapter packages — factory functions", () => {
   it("sqliteStore delete removes session", async () => {
     const { sqliteStore } = await import("../../packages/session-sqlite/src/index.js")
     const store = sqliteStore({ path: ":memory:" })
-    await store.save("s4", { state: {}, history: [], createdAt: "", updatedAt: "" })
+    await store.save("s4", { state: {}, history: [], createdAt: 0, updatedAt: 0 })
     await store.delete("s4")
     const loaded = await store.load("s4")
     expect(loaded).toBeNull()

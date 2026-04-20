@@ -48,6 +48,7 @@ export type {
   SessionStore,
   SessionData,
   PiiMapping,
+  PiiType,
   StateSchema,
   StateFieldDef,
 } from "./types.js"
@@ -120,7 +121,7 @@ export type { InputValidationResult, InputValidator } from "./middleware/guard/i
 export { injectionDetector } from "./middleware/guard/injection-detector.js"
 export type { InjectionDetectorConfig } from "./middleware/guard/injection-detector.js"
 export type { RateLimitConfig } from "./middleware/guard/rate-limit.js"
-export type { PiiRedactConfig, PiiType } from "./middleware/guard/pii-redact.js"
+export type { PiiRedactConfig } from "./middleware/guard/pii-redact.js"
 export { OutputGuardrailError } from "./middleware/guard/output.js"
 export type { OutputValidationResult, OutputValidator, OutputGuardConfig } from "./middleware/guard/output.js"
 export { TurnTimeoutError } from "./middleware/guard/timeout.js"

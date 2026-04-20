@@ -14,7 +14,7 @@ export type SessionStatus = "created" | "running" | "completed" | "failed"
  * Sessions are in-memory for now — no persistence across process restarts.
  * Durable sessions (checkpoint/resume) are planned for Phase 6.
  */
-export class SessionStore {
+export class SessionState {
   /** Unique session identifier (auto-generated UUID or user-provided). */
   readonly id: string
 

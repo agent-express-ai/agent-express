@@ -94,8 +94,8 @@ describe("memory.store()", () => {
     await store.save("s3", {
       state: { count: 1 },
       history: [{ role: "user", content: "Turn 1" }, { role: "assistant", content: "Response 1" }],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     })
 
     const loaded = await store.load("s3")
@@ -129,7 +129,7 @@ describe("memory.store()", () => {
 
   it("delete removes session", async () => {
     const store = createMockStore()
-    await store.save("s4", { state: {}, history: [], createdAt: "", updatedAt: "" })
+    await store.save("s4", { state: {}, history: [], createdAt: 0, updatedAt: 0 })
     await store.delete("s4")
     const loaded = await store.load("s4")
     expect(loaded).toBeNull()

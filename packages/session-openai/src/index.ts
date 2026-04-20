@@ -33,7 +33,7 @@ export function openaiStore(config?: OpenAIStoreConfig): SessionStore {
             content: item.content?.[0]?.text ?? "",
           }))
         // State NOT persisted by OpenAI — return empty
-        return { state: {}, history, createdAt: "", updatedAt: "" }
+        return { state: {}, history, createdAt: 0, updatedAt: 0 }
       } catch {
         return null
       }

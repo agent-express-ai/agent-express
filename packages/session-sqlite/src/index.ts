@@ -49,8 +49,8 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
         CREATE TABLE IF NOT EXISTS sessions (
           id TEXT PRIMARY KEY,
           state TEXT NOT NULL DEFAULT '{}',
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +70,7 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
     async load(sessionId: string): Promise<SessionData | null> {
       const d = getDb()
       const row = d.prepare("SELECT state, created_at, updated_at FROM sessions WHERE id = ?").get(sessionId) as
-        | { state: string; created_at: string; updated_at: string }
+        | { state: string; created_at: number; updated_at: number }
         | undefined
 
       if (!row) return null
@@ -119,9 +119,10 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
     async add(sessionId: string, message: Message): Promise<void> {
       const d = getDb()
       // Ensure session exists
+      const now = Date.now()
       d.prepare(
-        `INSERT INTO sessions (id) VALUES (?) ON CONFLICT(id) DO UPDATE SET updated_at = datetime('now')`,
-      ).run(sessionId)
+        `INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET updated_at = ?`,
+      ).run(sessionId, now, now, now)
       d.prepare("INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)").run(
         sessionId,
         message.role,

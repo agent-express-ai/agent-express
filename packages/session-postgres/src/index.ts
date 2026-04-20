@@ -28,7 +28,7 @@ export function postgresStore(config: PostgresStoreConfig): SessionStore {
       const p = await getPool()
       const res = await p.query("SELECT state, created_at, updated_at FROM agent_sessions WHERE id = $1", [sessionId])
       if (res.rows.length === 0) return null
-      const row = res.rows[0] as { state: string; created_at: string; updated_at: string }
+      const row = res.rows[0] as { state: string; created_at: number; updated_at: number }
       const msgs = await p.query("SELECT role, content FROM agent_messages WHERE session_id = $1 ORDER BY id ASC", [sessionId])
       const history = (msgs.rows as Array<{ role: string; content: string }>).map(m => ({ role: m.role as Message["role"], content: m.content }))
       return { state: JSON.parse(row.state), history, createdAt: row.created_at, updatedAt: row.updated_at }

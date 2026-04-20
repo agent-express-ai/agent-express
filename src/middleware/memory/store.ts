@@ -64,8 +64,8 @@ export function memoryStore(config: MemoryStoreConfig): Middleware {
             const sessionData: SessionData = {
               state: { ...ctx.state },
               history: [...ctx.history],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
             }
             await backend.save(ctx.sessionId, sessionData)
           } catch {
