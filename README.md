@@ -4,6 +4,7 @@ Minimalist middleware framework for building AI agents in TypeScript.
 
 [![npm version](https://img.shields.io/npm/v/agent-express)](https://www.npmjs.com/package/agent-express)
 [![CI](https://img.shields.io/github/actions/workflow/status/agent-express-ai/agent-express/ci.yml?branch=main)](https://github.com/agent-express-ai/agent-express/actions)
+[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://github.com/agent-express-ai/agent-express)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 

@@ -10,5 +10,12 @@ export default defineConfig({
   test: {
     globals: true,
     include: ["tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts", "packages/*/src/**/*.ts"],
+      exclude: ["src/cli/**", "src/http/**", "**/*.test.ts", "**/index.ts"],
+      reporter: ["text", "text-summary", "json-summary", "html"],
+      reportsDirectory: "coverage",
+    },
   },
 })
