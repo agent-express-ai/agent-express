@@ -10,7 +10,7 @@ export interface QdrantRetrieverConfig {
   url?: string
   /** Collection name. */
   collection: string
-  /** API key for Qdrant Cloud. */
+  /** API key for Qdrant Cloud. Default: process.env.QDRANT_API_KEY. */
   apiKey?: string
   /** Embedding function for query. */
   embed: (text: string) => Promise<number[]>
@@ -19,7 +19,7 @@ export interface QdrantRetrieverConfig {
 }
 
 export function qdrantRetriever(config: QdrantRetrieverConfig): (query: string) => Promise<Chunk[]> {
-  const { url = "http://localhost:6333", collection, apiKey, embed, topK = 5 } = config
+  const { url = "http://localhost:6333", collection, apiKey = process.env["QDRANT_API_KEY"], embed, topK = 5 } = config
 
   if (apiKey && url.startsWith("http://")) {
     const host = new URL(url).hostname

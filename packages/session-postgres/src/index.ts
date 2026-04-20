@@ -6,12 +6,13 @@
 import type { SessionStore, SessionData, Message } from "agent-express"
 
 export interface PostgresStoreConfig {
-  /** PostgreSQL connection string. */
-  connectionString: string
+  /** PostgreSQL connection string. Default: process.env.DATABASE_URL. */
+  connectionString?: string
 }
 
-export function postgresStore(config: PostgresStoreConfig): SessionStore {
-  const { connectionString } = config
+export function postgresStore(config?: PostgresStoreConfig): SessionStore {
+  const connectionString = config?.connectionString ?? process.env["DATABASE_URL"]
+  if (!connectionString) throw new Error("PostgreSQL connection string required. Set DATABASE_URL or pass connectionString.")
 
   let pool: import("pg").Pool | null = null
 

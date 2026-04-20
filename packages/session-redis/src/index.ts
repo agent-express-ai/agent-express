@@ -6,7 +6,7 @@
 import type { SessionStore, SessionData, Message } from "agent-express"
 
 export interface RedisStoreConfig {
-  /** Redis URL. Default: "redis://localhost:6379". */
+  /** Redis URL. Default: process.env.REDIS_URL or "redis://localhost:6379". */
   url?: string
   /** Key prefix. Default: "agent-express:session:". */
   prefix?: string
@@ -15,7 +15,7 @@ export interface RedisStoreConfig {
 }
 
 export function redisStore(config?: RedisStoreConfig): SessionStore {
-  const url = config?.url ?? "redis://localhost:6379"
+  const url = config?.url ?? process.env["REDIS_URL"] ?? "redis://localhost:6379"
   const prefix = config?.prefix ?? "agent-express:session:"
   const ttl = config?.ttl
 

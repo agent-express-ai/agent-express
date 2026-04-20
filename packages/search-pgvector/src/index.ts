@@ -5,8 +5,8 @@
 import type { Chunk } from "agent-express"
 
 export interface PgvectorRetrieverConfig {
-  /** PostgreSQL connection string. */
-  connectionString: string
+  /** PostgreSQL connection string. Default: process.env.DATABASE_URL. */
+  connectionString?: string
   /** Table name containing vectors. Default: "documents". */
   table?: string
   /** Text column. Default: "content". */
@@ -27,7 +27,8 @@ function validateIdentifier(name: string, label: string): void {
 }
 
 export function pgvectorRetriever(config: PgvectorRetrieverConfig): (query: string) => Promise<Chunk[]> {
-  const { connectionString, table = "documents", textColumn = "content", vectorColumn = "embedding", embed, topK = 5 } = config
+  const { connectionString = process.env["DATABASE_URL"], table = "documents", textColumn = "content", vectorColumn = "embedding", embed, topK = 5 } = config
+  if (!connectionString) throw new Error("PostgreSQL connection string required. Set DATABASE_URL or pass connectionString.")
 
   validateIdentifier(table, "table name")
   validateIdentifier(textColumn, "text column name")
