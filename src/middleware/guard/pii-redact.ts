@@ -1,5 +1,5 @@
 import type { Middleware, ModelContext, ToolContext } from "../../middleware.js"
-import type { Message, MessagePart, ModelResponse, ToolResult, PiiMapping, PiiType } from "../../types.js"
+import type { Message, ModelResponse, ToolResult, PiiMapping, PiiType } from "../../types.js"
 
 export type { PiiType }
 
