@@ -1,0 +1,20 @@
+{
+  "name": "fintech-support-demo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "agent-express": "*",
+    "@agent-express/preset-support": "*",
+    "@agent-express/search-llamaindex": "*",
+    "@agent-express/embed-openai": "*",
+    "@agent-express/session-sqlite": "*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

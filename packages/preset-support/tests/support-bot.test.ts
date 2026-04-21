@@ -28,17 +28,10 @@ describe("supportBot()", () => {
     expect(middlewares.some(m => m.name === "guard:tone")).toBe(false)
   })
 
-  it("escalation tool registered when provided", () => {
-    const mockTool = {
-      name: "escalate_to_human",
-      description: "Transfer to human",
-      jsonSchema: {},
-      execute: async () => "transferred",
-    }
-    const middlewares = supportBot({ escalation: mockTool })
-    // Composition middleware should register the tool in agent hook
-    const composition = middlewares.find(m => m.name === "preset:supportBot")
-    expect(composition?.agent).toBeDefined()
+  it("escalation tool middleware included when provided", () => {
+    const mockEscalation = { name: "escalate_to_human" }
+    const middlewares = supportBot({ escalation: mockEscalation })
+    expect(middlewares.some(m => m.name === "escalate_to_human")).toBe(true)
   })
 
   it("fileSearch middleware included when provided", () => {

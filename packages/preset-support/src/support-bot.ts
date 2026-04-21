@@ -1,4 +1,4 @@
-import type { Middleware, Tool, PiiType } from "agent-express"
+import type { Middleware, PiiType } from "agent-express"
 import { guard } from "agent-express"
 import { guardTone } from "./tone.js"
 import { agentEscalation } from "./escalation.js"
@@ -16,8 +16,8 @@ export interface SupportBotConfig {
   pii?: { types?: PiiType[]; custom?: Array<{ pattern: RegExp; placeholder: string }> } | false
   /** Tone style or false to disable. Default: "friendly-professional". */
   tone?: ToneStyle | false
-  /** Developer's escalation tool. Recommended — without it, only safety net works. */
-  escalation?: Tool
+  /** Developer's escalation tool middleware (from tools.function()). Recommended — without it, only safety net works. */
+  escalation?: Middleware
   /** Safety net: force-escalate after N unproductive turns. Default: 5. */
   escalationAfter?: number
   /** File/document search middleware instance. */
@@ -58,29 +58,20 @@ export function supportBot(config?: SupportBotConfig): Middleware[] {
   // We'll build the middleware array — caller must have agent-express installed
   // Since this is a composition, we reference middleware by importing at runtime
 
-  // For now, return a composition middleware that applies all settings
-  const compositionMiddleware: Middleware = {
-    name: "preset:supportBot",
+  middlewares.push({ name: "preset:supportBot" })
 
-    // Store escalation tool for registration
-    agent(ctx, next) {
-      if (config?.escalation) {
-        ctx.registerTool(config.escalation)
-      } else {
-        // Log warning — no escalation tool
-        process.stderr.write(
-          JSON.stringify({
-            timestamp: new Date().toISOString(),
-            type: "preset:warning",
-            message: "No escalation tool provided — safety net only, users cannot request human help via model",
-          }) + "\n",
-        )
-      }
-      return next()
-    },
+  // Add escalation tool middleware if provided
+  if (config?.escalation) {
+    middlewares.push(config.escalation)
+  } else {
+    process.stderr.write(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: "preset:warning",
+        message: "No escalation tool provided — safety net only, users cannot request human help via model",
+      }) + "\n",
+    )
   }
-
-  middlewares.push(compositionMiddleware)
 
   // Add file search if provided
   if (config?.fileSearch) {
