@@ -1,5 +1,5 @@
 import type { Middleware, SessionContext } from "../../middleware.js"
-import type { SessionStore, SessionData, Message } from "../../types.js"
+import type { SessionStore, SessionData } from "../../types.js"
 
 /**
  * Configuration for the `memory.store()` middleware.
@@ -29,7 +29,7 @@ export interface MemoryStoreConfig {
  * ```
  */
 export function memoryStore(config: MemoryStoreConfig): Middleware {
-  const { backend, ttl } = config
+  const { backend } = config
 
   return {
     name: "memory:store",

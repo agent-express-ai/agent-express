@@ -107,7 +107,7 @@ export function guardPiiRedact(config?: PiiRedactConfig): Middleware {
       return { ...msg, content: redactText(msg.content, mappings) }
     }
     // Multi-part content: iterate and redact text fields within each part
-    const parts = (msg.content as MessagePart[]).map((part) => {
+    const parts = msg.content.map((part) => {
       if (part.text != null) {
         return { ...part, text: redactText(part.text, mappings) }
       }
