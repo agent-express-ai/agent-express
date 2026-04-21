@@ -5,9 +5,15 @@ prev: false
 title: "ObserveMetricsOptions"
 ---
 
-Configuration for the `observe.metrics()` middleware.
-
 ## Properties
+
+### custom?
+
+> `optional` **custom?**: `CustomMetricMapping`[]
+
+Custom state-to-metric mappings for middleware-specific metrics.
+
+***
 
 ### meter?
 
