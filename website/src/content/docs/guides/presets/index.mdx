@@ -1,0 +1,50 @@
+---
+title: Presets Overview
+description: "Production-ready middleware compositions for common AI agent use cases."
+---
+
+Presets are pre-configured middleware stacks for common agent types. One function call gives you production-grade guardrails, search, observability, and more.
+
+## How presets work
+
+A preset is a function that returns `Middleware[]`. You pass it to `agent.use()` just like any other middleware:
+
+```typescript
+import { Agent } from "agent-express"
+import { supportBot } from "@agent-express/preset-support"
+
+const agent = new Agent({
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a helpful support agent.",
+})
+
+agent.use(supportBot({ tone: "empathetic" }))
+```
+
+Under the hood, `supportBot()` composes 8+ middleware into a single array: budget caps, timeouts, PII redaction, tone enforcement, rate limiting, escalation, and more. Every default is overridable or disableable.
+
+## Available presets
+
+| Preset | Package | Use case |
+|---|---|---|
+| [Support Bot](/guides/presets/support-bot/) | `@agent-express/preset-support` | Customer support with RAG, PII, escalation, tone |
+
+## Writing your own preset
+
+A preset is just a function that returns middleware:
+
+```typescript
+import type { Middleware } from "agent-express"
+import { guard, observe, memory } from "agent-express"
+
+export function myPreset(config?: MyConfig): Middleware[] {
+  return [
+    guard.budget({ limit: config?.budget ?? 1.00 }),
+    guard.timeout({ turn: 30_000 }),
+    observe.log(),
+    memory.compaction({ maxTokens: 8192 }),
+  ]
+}
+```
+
+This follows the same pattern as built-in presets. No special API needed.

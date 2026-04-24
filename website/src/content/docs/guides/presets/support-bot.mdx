@@ -1,0 +1,125 @@
+---
+title: Support Bot
+description: "Production-ready customer support agent with RAG, PII protection, tone enforcement, escalation, and rate limiting."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components"
+
+`@agent-express/preset-support` — a single function call that wires up everything you need for a production customer support agent.
+
+## Install
+
+```bash
+npm install @agent-express/preset-support
+```
+
+Optional adapters (pick what you need):
+
+```bash
+# Knowledge base search (RAG)
+npm install @agent-express/search-llamaindex @agent-express/embed-openai
+
+# Web search
+npm install @agent-express/search-brave
+
+# Session persistence
+npm install @agent-express/session-sqlite
+```
+
+## Usage
+
+```typescript
+import { Agent, search, memory, tools } from "agent-express"
+import { supportBot } from "@agent-express/preset-support"
+import { llamaindexRetriever } from "@agent-express/search-llamaindex"
+import { openaiEmbed } from "@agent-express/embed-openai"
+import { braveProvider } from "@agent-express/search-brave"
+import { sqliteStore } from "@agent-express/session-sqlite"
+import { z } from "zod"
+
+const agent = new Agent({
+  name: "support",
+  model: "anthropic/claude-sonnet-4-6",
+  instructions: "You are a customer support agent for Acme Corp.",
+})
+
+agent.use(supportBot({
+  fileSearch: search.file({
+    retrieve: llamaindexRetriever({
+      sources: ["./knowledge-base"],
+      embed: openaiEmbed(),
+    }),
+  }),
+  webSearch: search.web({ provider: braveProvider() }),
+  sessionStore: memory.store({ backend: sqliteStore() }),
+  escalation: tools.function({
+    name: "escalate_to_human",
+    description: "Transfer customer to human support agent",
+    schema: z.object({ reason: z.string() }),
+    execute: async ({ reason }) => `Connecting you with a human agent. Reason: ${reason}`,
+  }),
+}))
+```
+
+## What's included by default
+
+| Capability | Middleware | Default |
+|---|---|---|
+| Budget cap | `guard.budget()` | $0.50/session |
+| Turn timeout | `guard.timeout()` | 30 seconds |
+| PII redaction | `guard.piiRedact()` | All types (email, phone, CC, SSN, IP) |
+| Tone enforcement | `guard.tone()` | "friendly-professional" |
+| Escalation safety net | Escalation counter | After 5 unproductive turns |
+| Rate limiting | `guard.rateLimit()` | 60/min per session |
+
+All of these are created automatically inside `supportBot()`. You just pass config to override defaults.
+
+## What you provide
+
+| Option | Middleware | Purpose |
+|---|---|---|
+| `fileSearch` | `search.file()` | Knowledge base / document RAG |
+| `webSearch` | `search.web()` | Real-time web search |
+| `sessionStore` | `memory.store()` | Conversation persistence |
+| `escalation` | `tools.function()` | Escalation tool for the model to call |
+
+These are optional. Without them, the bot still works — it just won't have RAG, web search, persistence, or model-driven escalation.
+
+## Customization
+
+Every default is overridable. Set any option to `false` to disable:
+
+```typescript
+supportBot({
+  budget: 2.00,                    // override budget
+  pii: false,                      // disable PII redaction
+  tone: "formal",                  // change tone style
+  escalationAfter: 3,              // escalate faster
+  rateLimit: { maxPerMinute: 30 }, // stricter rate limit
+})
+```
+
+## Escalation
+
+Two mechanisms work together:
+
+1. **Model-driven** (primary) — your escalation tool. The model decides when to call it based on user intent, frustration, or inability to help. This is the recommended path.
+
+2. **Safety net** (fallback) — a turn counter that force-escalates after N unproductive turns (default: 5) if the model doesn't act. Resets whenever the model calls any tool.
+
+Without an escalation tool, only the safety net works.
+
+## Tone Styles
+
+| Style | Best for |
+|---|---|
+| `"friendly-professional"` (default) | General customer support |
+| `"formal"` | Enterprise, legal, finance |
+| `"casual"` | Consumer apps, social |
+| `"empathetic"` | Complaints, fraud, sensitive issues |
+| `"concise"` | Technical support, quick answers |
+| `"educational"` | Onboarding, tutorials |
+
+## Example: NeoBank
+
+See the [fintech support bot demo](https://github.com/agent-express-ai/agent-express/tree/main/demo/fintech-support) for a complete working example with fraud detection, card blocking, RAG from knowledge base, and SQLite session persistence.

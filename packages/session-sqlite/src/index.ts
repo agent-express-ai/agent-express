@@ -9,6 +9,7 @@
  */
 
 import type { SessionStore, SessionData, Message } from "agent-express"
+import { createRequire } from "module"
 
 /**
  * Configuration for the SQLite session store.
@@ -40,9 +41,8 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
 
   function getDb(): import("better-sqlite3").Database {
     if (!db) {
-      // Dynamic import for better-sqlite3
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const Database = require("better-sqlite3") as typeof import("better-sqlite3").default
+      const req = createRequire(import.meta.url)
+      const Database = req("better-sqlite3") as typeof import("better-sqlite3").default
       db = new Database(dbPath)
       db.pragma("journal_mode = WAL")
       db.exec(`

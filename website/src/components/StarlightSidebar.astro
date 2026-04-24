@@ -13,7 +13,7 @@ let blogPosts: { title: string; slug: string; date: string }[] = [];
 if (isBlogPage) {
   const docs = await getCollection('docs');
   blogPosts = docs
-    .filter((doc) => doc.id.startsWith('blog/'))
+    .filter((doc) => doc.id.startsWith('blog/') && doc.id !== 'blog/index')
     .map((doc) => {
       // Extract date from the content if available
       const content = doc.body || '';
@@ -78,6 +78,10 @@ if (isBlogPage) {
     list-style: none;
     padding: 0;
     margin: 0;
+  }
+
+  .blog-sidebar-list li + li {
+    margin-top: 0.75rem;
   }
 
   .blog-sidebar-link {
