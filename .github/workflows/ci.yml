@@ -40,15 +40,5 @@ jobs:
           COVERAGE=$(node -e "const c = require('./coverage/coverage-summary.json'); console.log(c.total.statements.pct)")
           echo "pct=$COVERAGE" >> "$GITHUB_OUTPUT"
           echo "Coverage: $COVERAGE%"
-      - name: Create coverage badge
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        if: github.ref == 'refs/heads/main'
-        with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gistID: coverage-badge
-          filename: agent-express-coverage.json
-          label: coverage
-          message: ${{ steps.coverage.outputs.pct }}%
-          valColorRange: ${{ steps.coverage.outputs.pct }}
-          minColorRange: 50
-          maxColorRange: 90
+      # Badge updated manually in README.md
+      # To enable dynamic badge, create a gist and add GIST_TOKEN secret
