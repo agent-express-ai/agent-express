@@ -1,6 +1,6 @@
 import type { Message, RunOptions, RunResult, Tool, ModelResponse, StreamEvent } from "./types.js"
 import type { Middleware, AgentContext, SessionContext, ModelContext } from "./middleware.js"
-import { SessionStore } from "./session-store.js"
+import { SessionState } from "./session-store.js"
 import { AgentRun } from "./run.js"
 import { composeHooks } from "./executor.js"
 import { createSessionContext, createTurnContext } from "./context.js"
@@ -48,7 +48,7 @@ export class Session {
   /** Session state — read-only for client code. Middleware writes via ctx.state. */
   readonly state: Record<string, unknown>
 
-  private readonly store: SessionStore
+  private readonly store: SessionState
   private readonly internals: SessionInternals
   private closed = false
   private turnInProgress = false
@@ -59,7 +59,7 @@ export class Session {
   private initPromise: Promise<void> | null = null
 
   /** @internal — use `agent.session()` to create sessions. */
-  constructor(store: SessionStore, internals: SessionInternals) {
+  constructor(store: SessionState, internals: SessionInternals) {
     this.store = store
     this.internals = internals
     this.id = store.id
@@ -224,12 +224,16 @@ export class Session {
     const turnOnion = composeHooks(this.internals.middlewares, "turn", turnBody)
     await turnOnion(turnCtx)
 
+    // Middleware may short-circuit (e.g., guard.rateLimit) by setting ctx.output without calling next().
+    // In that case turnBody never runs, so prefer ctx.output over the loop result.
+    const finalText = turnCtx.output ?? turnText
+
     // After onion completes (all middleware after-next has run), snapshot state and complete
     this.turnInProgress = false
-    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: turnText })
+    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: finalText })
 
     const result: RunResult = {
-      text: turnText,
+      text: finalText,
       state: snapshotState(this.store.state),
       data: turnData,
     }

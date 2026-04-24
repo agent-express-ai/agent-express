@@ -7,7 +7,7 @@ import type {
   ToolContext,
 } from "./middleware.js"
 import { AbortError } from "./errors.js"
-import type { SessionStore } from "./session-store.js"
+import type { SessionState } from "./session-store.js"
 import type { EventBus } from "./events.js"
 
 export function createAgentContext(
@@ -29,7 +29,7 @@ export function createAgentContext(
 
 export function createSessionContext(
   agentCtx: AgentContext,
-  session: SessionStore,
+  session: SessionState,
   bus: EventBus,
 ): SessionContext {
   return {

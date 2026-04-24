@@ -265,6 +265,104 @@ export interface MetricsSnapshot {
   }
 }
 
+// ─── Search & Knowledge ───────────────────────────────
+
+/**
+ * Retrieved knowledge fragment from document search.
+ * Returned by retriever functions, injected into model context by `search.file()`.
+ */
+export interface Chunk {
+  /** Chunk text content. */
+  text: string
+  /** Relevance score (0-1). */
+  score?: number
+  /** Source metadata for citation tracking. */
+  source?: {
+    /** Document title. */
+    title?: string
+    /** Source URL or file path. */
+    url?: string
+    /** Section within the document. */
+    section?: string
+  }
+}
+
+/**
+ * Web search result returned by search provider adapters.
+ * Passed to model as tool output by `search.web()`.
+ */
+export interface SearchResult {
+  /** Result title. */
+  title: string
+  /** Result URL. */
+  url: string
+  /** Text snippet. */
+  snippet: string
+}
+
+// ─── Session Persistence ──────────────────────────────
+
+/**
+ * Interface for session persistence backends.
+ * Implement this to store sessions in any storage system.
+ * Built-in adapters: `@agent-express/session-sqlite`, `session-redis`, `session-postgres`.
+ */
+export interface SessionStore {
+  /** Load full session (state + history). Returns null if not found. */
+  load(sessionId: string): Promise<SessionData | null>
+  /** Save full session (state + history). */
+  save(sessionId: string, data: SessionData): Promise<void>
+  /** Delete session. */
+  delete(sessionId: string): Promise<void>
+  /** Append a single message without rewriting the full history. */
+  add(sessionId: string, message: Message): Promise<void>
+  /** Get messages with pagination. */
+  list(sessionId: string, opts?: {
+    /** Max messages to return. */
+    limit?: number
+    /** Skip first N messages. */
+    offset?: number
+    /** Sort order. Default: "desc" (newest first). */
+    order?: "asc" | "desc"
+  }): Promise<Message[]>
+}
+
+/**
+ * Persisted session data.
+ * `state` contains both middleware data and developer custom data.
+ */
+export interface SessionData {
+  /** Session state — middleware keys + developer data. */
+  state: Record<string, unknown>
+  /** Conversation message history. */
+  history: Message[]
+  /** Creation timestamp (epoch ms). */
+  createdAt: number
+  /** Last update timestamp (epoch ms). */
+  updatedAt: number
+}
+
+// ─── PII ──────────────────────────────────────────────
+
+/**
+ * Per-session PII redaction mapping for restore mechanism.
+ * Maintained by `guard.piiRedact()` — tools get original values.
+ */
+export interface PiiMapping {
+  /** Placeholder used in redacted text (e.g., "[EMAIL_1]"). */
+  placeholder: string
+  /** Original PII value (e.g., "john@example.com"). */
+  original: string
+  /** PII type — built-in ("email", "phone", etc.) or custom pattern name. */
+  type: PiiType | (string & {})
+}
+
+/**
+ * Built-in PII types supported by `guard.piiRedact()`.
+ * Custom patterns can define additional string types.
+ */
+export type PiiType = "email" | "phone" | "creditCard" | "ssn" | "ip"
+
 // ─── Session ──────────────────────────────────────────
 
 /** Options passed to `agent.session()`. */

@@ -56,3 +56,37 @@ agent.use(memory.compaction({
   keepRecentMessages: 10,
 }))
 ```
+
+### store
+
+> **store**: (`config`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `memoryStore`
+
+Session persistence to external stores.
+
+Creates a `memory.store()` middleware for session persistence.
+
+Loads session on creation, saves after each turn. Falls back to in-memory
+on backend failure — user-facing functionality is never blocked.
+
+#### Parameters
+
+##### config
+
+[`MemoryStoreConfig`](/reference/api/index/interfaces/memorystoreconfig/)
+
+SessionStore backend and options
+
+#### Returns
+
+[`Middleware`](/reference/api/index/interfaces/middleware/)
+
+Middleware
+
+#### Example
+
+```typescript
+import { memory } from "agent-express"
+import { sqliteStore } from "@agent-express/session-sqlite"
+
+agent.use(memory.store({ backend: sqliteStore({ path: "./sessions.db" }) }))
+```

@@ -1,9 +1,97 @@
 ---
 title: Memory
-description: "Memory middleware: context window compaction with 5 strategies."
+description: "Memory middleware: session persistence and context window compaction."
 ---
 
-Memory management middleware. Prevent context window overflow by compacting conversation history with 5 built-in strategies.
+Memory middleware for session persistence and context window management.
+
+## memory.store()
+
+Persists session state and conversation history to an external store. Loads on session start, saves after all turns complete. Falls back to in-memory on backend failure -- user-facing functionality is never blocked.
+
+```typescript
+function memoryStore(config: MemoryStoreConfig): Middleware
+```
+
+```typescript
+import { memory } from "agent-express"
+import { sqliteStore } from "@agent-express/session-sqlite"
+
+agent.use(memory.store({
+  backend: sqliteStore({ path: "./sessions.db" }),
+}))
+```
+
+**Config options:**
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `backend` | `SessionStore` | *required* | Session store implementation |
+| `ttl` | `number` | -- | Session TTL in seconds (backend-dependent) |
+
+**Hooks:** `session` -- loads state/history before `next()`, saves in `finally`.
+
+### SessionStore interface
+
+All store adapters implement this interface:
+
+```typescript
+interface SessionStore {
+  load(sessionId: string): Promise<SessionData | null>
+  save(sessionId: string, data: SessionData): Promise<void>
+  delete(sessionId: string): Promise<void>
+  add(sessionId: string, message: Message): Promise<void>
+  list(sessionId: string, opts?: { limit?: number; offset?: number; order?: "asc" | "desc" }): Promise<Message[]>
+}
+```
+
+`add()` appends a single message without rewriting full history. `list()` supports pagination for large conversation histories.
+
+### Store adapters
+
+| Adapter | Package | Best for |
+|---|---|---|
+| SQLite | `@agent-express/session-sqlite` | Local dev, single-server deployments |
+| Redis | `@agent-express/session-redis` | Distributed/multi-server, fast access |
+| PostgreSQL | `@agent-express/session-postgres` | Long-term persistence, audit trails |
+| OpenAI | `@agent-express/session-openai` | OpenAI Conversation API (messages only, no state) |
+| Custom | None needed | `backend: { load, save, delete, add, list }` |
+
+All adapters support env var fallback for connection config:
+
+```typescript
+// Explicit config
+sqliteStore({ path: "./sessions.db" })
+redisStore({ url: "redis://localhost:6379" })
+postgresStore({ connectionString: "postgresql://..." })
+
+// Or use env vars: DATABASE_URL, REDIS_URL
+postgresStore()  // reads DATABASE_URL
+redisStore()     // reads REDIS_URL, falls back to localhost
+```
+
+### Multi-turn example
+
+```typescript
+const agent = new Agent({ model: "openai/gpt-4o", instructions: "..." })
+agent.use(memory.store({ backend: sqliteStore({ path: "./db.sqlite" }) }))
+
+await agent.init()
+
+// Session 1: first conversation
+const s1 = agent.session({ id: "user-123" })
+await s1.run("My name is Alice").result
+await s1.close()
+
+// Session 2: resumes with full history
+const s2 = agent.session({ id: "user-123" })
+const { text } = await s2.run("What's my name?").result
+// text → "Your name is Alice"
+await s2.close()
+
+await agent.dispose()
+```
+
+---
 
 ## memory.compaction()
 

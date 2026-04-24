@@ -57,9 +57,17 @@ export default defineConfig({
             { label: "Guard", slug: "guides/builtins/guard" },
             { label: "Observability", slug: "guides/builtins/observe" },
             { label: "Model", slug: "guides/builtins/model" },
+            { label: "Search & RAG", slug: "guides/builtins/search" },
             { label: "Memory", slug: "guides/builtins/memory" },
             { label: "Tools & MCP", slug: "guides/builtins/tools" },
             { label: "Development", slug: "guides/builtins/dev" },
+          ],
+        },
+        {
+          label: "Presets",
+          items: [
+            { label: "Overview", slug: "guides/presets" },
+            { label: "Support Bot", slug: "guides/presets/support-bot" },
           ],
         },
         {

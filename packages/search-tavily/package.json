@@ -1,0 +1,12 @@
+{
+  "name": "@agent-express/search-tavily",
+  "version": "0.1.0",
+  "description": "Tavily Search API adapter for agent-express web search",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "scripts": { "build": "tsup src/index.ts --format esm --dts", "test": "echo 'tests run from root'" },
+  "peerDependencies": { "agent-express": ">=0.2.0" },
+  "files": ["dist/"], "license": "MIT"
+}

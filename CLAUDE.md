@@ -6,7 +6,8 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 ## Quick Reference
 
 - **Build**: `npm run build` (tsup → dist/)
-- **Test**: `npm test` (vitest, 247 tests)
+- **Test**: `npm test` (vitest, 619 tests, 75 files)
+- **Test with coverage**: `npm run test:coverage` (vitest + @vitest/coverage-v8)
 - **Typecheck**: `npm run typecheck` (tsc --noEmit)
 - **Lint**: `npx eslint .`
 
@@ -31,10 +32,23 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 - `guard.maxIterations()` — loop iteration limit
 - `guard.timeout()` — turn/model timeouts
 - `guard.approve()` — human-in-the-loop tool approval (`approve`, `deny`, `modify` helpers)
+- `guard.piiRedact()` — PII detection and masking with restore for tools (state-based propagation)
+- `guard.rateLimit()` — per-session/IP rate limiting with configurable strategies
+- `search.file()` — document/knowledge base search (RAG) with tool/auto modes
+- `search.web()` — web search tool (Brave, Tavily, Exa adapters)
 - `memory.compaction()` — context window management (5 strategies)
+- `memory.store()` — session persistence (SQLite, Redis, Postgres, custom)
 - `tools.function()` — TypeScript function tools with Zod schemas
 - `tools.mcp()` — MCP server connection
 - `dev.console()` — full lifecycle terminal trace
+
+**Presets** (separate packages, `@agent-express/*`):
+- `@agent-express/preset-support` — `supportBot()` with budget, timeout, PII, tone, escalation, rate limiting
+
+**Adapter packages** (`@agent-express/*`):
+- Embed: `embed-openai`, `embed-cohere`
+- Search: `search-brave`, `search-tavily`, `search-exa`, `search-qdrant`, `search-pinecone`, `search-pgvector`, `search-llamaindex`
+- Session: `session-sqlite`, `session-redis`, `session-postgres`, `session-openai`
 
 **RunResult:** Minimal — `{ text, state, data? }`. All metadata in state via middleware.
 
@@ -52,7 +66,7 @@ agent-express/test  → testAgent() declarative test helper
 
 - TypeScript strict mode, ESM only
 - Node.js 20+
-- Vitest for testing (TDD per constitution)
+- Vitest for testing
 - All middleware uses the same `Middleware` interface
 - `agent.use(fn)` shorthand: plain function = turn hook
 - `agent.use("model", fn)` scope-specific shorthand for any hook
@@ -62,13 +76,34 @@ agent-express/test  → testAgent() declarative test helper
 - Defaults auto-applied unless `defaults: false`
 - TSDoc comments on ALL public APIs
 - Model specified as string: `"anthropic/claude-sonnet-4-6"` (provider/model format)
+- All adapters support env var fallback: `config > process.env > error/default`
+
+## Testing Requirements
+
+- **Coverage target**: 85%+ statements for all new code. Current: 89% overall.
+- **Per-package tests**: every `packages/*/` must have its own `tests/` directory with tests
+- **Mock external APIs**: use `vi.stubGlobal("fetch", mockFetch)` for HTTP, `vi.mock()` for modules (pg, ioredis)
+- **No real API calls in tests**: vitest setup blocks outbound requests
+- **Test patterns**: use `FunctionModel` for mocking LLM, `Agent` with `defaults: false` for isolation
+- **Middleware must be self-contained**: no cross-namespace state reads (e.g., don't read `observe:tools` from a guard middleware). Use own hooks + state for tracking.
 
 ## Naming Conventions
 
 - **Namespaces**: `guard.budget()`, `guard.approve()`, `tools.mcp()`, `model.router()`, `observe.usage()`, `observe.metrics()`, `observe.traces()`, `memory.compaction()`, `dev.console()`
 - **State keys**: `ctx.state['guard:budget:totalCost']`, `ctx.state['observe:usage']` (namespace:field)
-- **Error classes**: `AbortError`, `ModelError`, `SessionClosedError`, `SessionBusyError`, etc.
+- **Error classes**: `AbortError`, `ModelError`, `SessionClosedError`, `SessionBusyError`, `UserRateLimitError`, etc.
 - **Context types**: `AgentContext`, `SessionContext`, `TurnContext`, `ModelContext`, `ToolContext`
+- **Internal class**: `SessionState` (runtime in-memory session state, NOT the public `SessionStore` interface)
+
+## Shared Types (src/types.ts)
+
+- `Source` — citation metadata (`title?`, `url?`, `section?`), used by `Chunk.source`
+- `Chunk` — retrieved document fragment (`text`, `score?`, `source?: Source`)
+- `SearchResult` — web search result (`title`, `url`, `snippet`), independent from Source
+- `SessionStore` — public interface for persistence adapters (`load`, `save`, `delete`, `add`, `list`)
+- `SessionData` — persisted session (`state`, `history`, `createdAt: number`, `updatedAt: number` — epoch ms)
+- `PiiMapping` — redaction mapping (`placeholder`, `original`, `type: PiiType | string`)
+- `PiiType` — built-in PII types: `"email" | "phone" | "creditCard" | "ssn" | "ip"`
 
 ## Project Structure
 
@@ -76,11 +111,11 @@ agent-express/test  → testAgent() declarative test helper
 src/
 ├── agent.ts              # Agent class: init(), session(), run(), dispose(), use()
 ├── session.ts            # Session class: run(), close(), history, state
-├── session-store.ts      # SessionStore (internal): state management, history
-├── context.ts            # Context type definitions
+├── session-store.ts      # SessionState (internal): runtime state, history, lifecycle
+├── context.ts            # Context factory functions
 ├── defaults.ts           # defaults() function — standard middleware preset
 ├── middleware.ts          # Middleware interface, 5 context types, hook types
-├── types.ts              # AgentDef, RunResult, RunOptions, SessionOptions, etc.
+├── types.ts              # Source, Chunk, SearchResult, SessionStore, PiiMapping, etc.
 ├── executor.ts           # composeHooks() onion executor
 ├── loop.ts               # Minimal agent loop: model → tool → model cycle
 ├── run.ts                # AgentRun: AsyncIterable<StreamEvent> + .result Promise
@@ -119,9 +154,16 @@ src/
 │   │   ├── max-iterations.ts  # guard.maxIterations() — loop limit
 │   │   ├── timeout.ts    # guard.timeout() — turn/model timeouts
 │   │   ├── approve.ts    # guard.approve() — HITL tool approval
+│   │   ├── pii-redact.ts # guard.piiRedact() — PII masking + restore
+│   │   ├── rate-limit.ts # guard.rateLimit() — sliding window
+│   │   ├── injection-detector.ts  # injectionDetector() — prompt injection heuristics
 │   │   └── pricing.ts    # Model pricing table
 │   ├── memory/
-│   │   └── compaction.ts # memory.compaction() — 5 compaction strategies
+│   │   ├── compaction.ts # memory.compaction() — 5 compaction strategies
+│   │   └── store.ts      # memory.store() — session persistence
+│   ├── search/
+│   │   ├── file.ts       # search.file() — document RAG (tool/auto modes)
+│   │   └── web.ts        # search.web() — web search tool
 │   ├── tools/
 │   │   └── mcp.ts        # tools.mcp() — MCP server connection
 │   └── dev/
@@ -140,18 +182,22 @@ src/
 │   └── allow-real-requests.ts  # ALLOW_REAL_REQUESTS flag
 └── index.ts              # Public exports + namespace objects
 
-packages/create-agent-express/
-├── src/
-│   ├── index.ts           # CLI entry point
-│   ├── ai-scaffold.ts    # AI scaffold (disabled, kept for future use)
-│   ├── template-scaffold.ts  # Static template scaffold
-│   ├── browser-auth.ts   # Browser-based auth
-│   └── prompts.ts        # Interactive prompts
-└── templates/             # 4 project templates
-    ├── default/           # Minimal agent starter
-    ├── coding/            # Coding assistant
-    ├── research/          # Research agent
-    └── support-bot/       # Support bot with tools
+packages/
+├── create-agent-express/  # CLI scaffold tool
+├── preset-support/        # @agent-express/preset-support (tone, escalation, supportBot)
+├── embed-openai/          # OpenAI text-embedding-3-small
+├── embed-cohere/          # Cohere embed-v3
+├── search-brave/          # Brave Search API
+├── search-tavily/         # Tavily Search API
+├── search-exa/            # Exa semantic search
+├── search-qdrant/         # Qdrant vector DB
+├── search-pinecone/       # Pinecone vector DB
+├── search-pgvector/       # PostgreSQL pgvector
+├── search-llamaindex/     # LlamaIndex.TS file ingestion
+├── session-sqlite/        # SQLite via better-sqlite3
+├── session-redis/         # Redis via ioredis
+├── session-postgres/      # PostgreSQL via pg (Pool + transactions)
+└── session-openai/        # OpenAI Conversation API (messages only)
 ```
 
 ## CLI Commands
@@ -165,10 +211,13 @@ npx agent-express test                           # agent test runner (blocks rea
 npx agent-express test --ci                      # JUnit XML output for CI
 ```
 
-
 ## Active Technologies
-- TypeScript strict mode, ESM only, Node.js 20+ + `@ai-sdk/provider` (v3), `@opentelemetry/api` (optional peer dep), Zod, tsup (009-providers-observability)
-- N/A (metrics are in-memory, reset on restart) (009-providers-observability)
 
-## Recent Changes
-- 009-providers-observability: Added TypeScript strict mode, ESM only, Node.js 20+ + `@ai-sdk/provider` (v3), `@opentelemetry/api` (optional peer dep), Zod, tsup
+- TypeScript strict mode, ESM only, Node.js 20+
+- `@ai-sdk/provider` (v3) for model abstraction
+- `@opentelemetry/api` (optional peer dep) for metrics + traces
+- Zod for schema validation
+- tsup for building
+- Vitest + @vitest/coverage-v8 for testing (89% coverage)
+- npm workspaces for monorepo
+- better-sqlite3, ioredis, pg as peer deps in adapter packages

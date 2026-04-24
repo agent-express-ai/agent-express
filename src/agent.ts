@@ -4,7 +4,7 @@ import type {
   Middleware, AgentContext, ModelContext, HookScope,
   AgentHookFn, SessionHookFn, TurnHookFn, ModelHookFn, ToolHookFn,
 } from "./middleware.js"
-import { SessionStore } from "./session-store.js"
+import { SessionState } from "./session-store.js"
 import { AgentRun } from "./run.js"
 import { composeHooks } from "./executor.js"
 import { createAgentContext } from "./context.js"
@@ -180,7 +180,7 @@ export class Agent {
     // If not initialized, we start init and the first run() will await it.
     // For truly async init, call agent.init() first.
     const stateSchemas = this.middlewares.filter((m) => m.state).map((m) => m.state!)
-    const store = new SessionStore(opts?.id, stateSchemas)
+    const store = new SessionState(opts?.id, stateSchemas)
     const modelId = typeof this.def.model === "string" ? this.def.model : this.def.model.modelId
 
     // Explicit check instead of null assertion
@@ -236,7 +236,7 @@ export class Agent {
     await this.init()
 
     const stateSchemas = this.middlewares.filter((m) => m.state).map((m) => m.state!)
-    const store = new SessionStore(undefined, stateSchemas)
+    const store = new SessionState(undefined, stateSchemas)
     const modelId = typeof this.def.model === "string" ? this.def.model : this.def.model.modelId
 
     if (!this.agentCtx) {

@@ -9,9 +9,9 @@ title: "resolveModel"
 
 Resolves a model identifier string to a `LanguageModelV3` instance.
 
-Parses the `"provider/model-name"` format and dynamically imports the
-corresponding AI SDK provider package. Provider packages (`@ai-sdk/anthropic`,
-`@ai-sdk/openai`) are peer dependencies that the user installs.
+Dynamically imports the corresponding `@ai-sdk/{provider}` package for any
+provider. Provider packages are optional peer dependencies — users install
+only what they need.
 
 ## Parameters
 
@@ -19,7 +19,7 @@ corresponding AI SDK provider package. Provider packages (`@ai-sdk/anthropic`,
 
 `string`
 
-Model string like `"anthropic/claude-sonnet-4-6"` or `"openai/gpt-4o"`
+Model string like `"anthropic/claude-sonnet-4-6"`, `"google/gemini-2.0-flash"`, or `"openai/gpt-4o"`
 
 ## Returns
 
@@ -29,11 +29,11 @@ Resolved LanguageModelV3 instance
 
 ## Throws
 
-Error if format is invalid, provider is unknown, or package is not installed
+Error if format is invalid, provider package is not installed, or provider export is incompatible
 
 ## Example
 
 ```typescript
-const model = await resolveModel("anthropic/claude-sonnet-4-6")
+const model = await resolveModel("google/gemini-2.0-flash")
 const result = await model.doGenerate({ prompt: [...] })
 ```

@@ -1,0 +1,30 @@
+{
+  "name": "@agent-express/session-sqlite",
+  "version": "0.1.0",
+  "description": "SQLite session store adapter for agent-express",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "echo 'tests run from root'",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "agent-express": ">=0.2.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0"
+  },
+  "files": ["dist/", "README.md"],
+  "license": "MIT"
+}

@@ -1,0 +1,91 @@
+---
+title: Search & RAG
+description: "Document search (RAG) and web search middleware."
+---
+
+Search middleware for document/knowledge base retrieval and web search. Both use the adapter pattern — core middleware accepts a function, adapter packages provide implementations.
+
+## search.file()
+
+Document/knowledge base search with RAG retrieval. Two modes: `tool` (model decides when to search) and `auto` (retrieves every turn).
+
+```typescript
+import { search } from "agent-express"
+
+agent.use(search.file({
+  retrieve: myRetriever,  // (query: string) => Promise<Chunk[]>
+  mode: "tool",           // "tool" (default) | "auto"
+  topK: 5,                // max chunks injected
+}))
+```
+
+### Tool mode (default, recommended)
+
+Registers a `search_knowledge` tool. The model calls it when it needs information:
+
+```typescript
+agent.use(search.file({ retrieve: myRetriever }))
+// Model sees: search_knowledge({ query: "how to reset password" })
+```
+
+### Auto mode
+
+Retrieves every turn using the latest user message:
+
+```typescript
+agent.use(search.file({ retrieve: myRetriever, mode: "auto" }))
+```
+
+### Source tracking
+
+Retrieved chunks are written to `state['search:file:sources']` as `Chunk[]`:
+
+```typescript
+const { state } = await agent.run("How to reset password?").result
+const sources = state['search:file:sources'] as Chunk[]
+// [{ text: "Go to Settings > Security...", score: 0.95, source: { title: "Password Guide" } }]
+```
+
+### Retriever adapters
+
+| Adapter | Package | Use case |
+|---|---|---|
+| LlamaIndex.TS | `@agent-express/search-llamaindex` | Full RAG pipeline (160+ loaders, all vector DBs) |
+| Qdrant | `@agent-express/search-qdrant` | Standalone Qdrant retriever |
+| Pinecone | `@agent-express/search-pinecone` | Standalone Pinecone retriever |
+| pgvector | `@agent-express/search-pgvector` | Standalone PostgreSQL retriever |
+| Custom | None needed | `retrieve: async (query) => mySearch(query)` |
+
+---
+
+## search.web()
+
+Web search tool — model calls it when knowledge base doesn't have the answer.
+
+```typescript
+import { search } from "agent-express"
+import { braveProvider } from "@agent-express/search-brave"
+
+agent.use(search.web({ provider: braveProvider({ apiKey: process.env.BRAVE_API_KEY }) }))
+```
+
+Results tracked in `state['search:web:results']` as `SearchResult[]`.
+
+### Search providers
+
+| Provider | Package | Price |
+|---|---|---|
+| Brave | `@agent-express/search-brave` | $3/1K queries |
+| Tavily | `@agent-express/search-tavily` | $0-5/1K |
+| Exa | `@agent-express/search-exa` | Enterprise |
+| Custom | None needed | `provider: async (query) => myAPI(query)` |
+
+### Embedding adapters
+
+Used by retriever adapters (LlamaIndex, etc.) for document ingestion:
+
+| Provider | Package |
+|---|---|
+| OpenAI | `@agent-express/embed-openai` (`text-embedding-3-small`) |
+| Cohere | `@agent-express/embed-cohere` (`embed-v3`) |
+| Custom | `embed: async (text) => myEmbed(text)` |

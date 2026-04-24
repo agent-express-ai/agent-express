@@ -203,6 +203,63 @@ agent.use(guard.output({
 }))
 ```
 
+### piiRedact
+
+> **piiRedact**: (`config?`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `guardPiiRedact`
+
+PII detection and masking with restore for tools.
+
+Creates a `guard.piiRedact()` middleware that detects and masks PII.
+
+Redacts PII in user messages before the LLM sees them, and maintains
+a per-session mapping for restore — tools get original values.
+Also masks PII in log events and trace span attributes.
+
+#### Parameters
+
+##### config?
+
+[`PiiRedactConfig`](/reference/api/index/interfaces/piiredactconfig/)
+
+PII types and custom patterns
+
+#### Returns
+
+[`Middleware`](/reference/api/index/interfaces/middleware/)
+
+Middleware
+
+#### Example
+
+```typescript
+agent.use(guard.piiRedact())
+// "My email is john@example.com" → "My email is [EMAIL]"
+```
+
+### rateLimit
+
+> **rateLimit**: (`config?`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `guardRateLimit`
+
+Per-session/IP rate limiting with configurable strategies.
+
+Creates a `guard.rateLimit()` middleware that limits request rate per session or IP.
+
+Uses sliding window algorithm. In-memory by default.
+
+#### Parameters
+
+##### config?
+
+[`RateLimitConfig`](/reference/api/index/interfaces/ratelimitconfig/)
+
+Rate limit options
+
+#### Returns
+
+[`Middleware`](/reference/api/index/interfaces/middleware/)
+
+Middleware
+
 ### timeout
 
 > **timeout**: (`config`) => [`Middleware`](/reference/api/index/interfaces/middleware/) = `guardTimeout`

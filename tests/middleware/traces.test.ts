@@ -262,4 +262,283 @@ describe("observe.traces()", () => {
       expect(span.attributes["gen_ai.tool.call.result"]).toBeUndefined()
     }
   })
+
+  it("session error — session span has error status when inner middleware throws", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+
+    const model = new FunctionModel(() => ({
+      text: "ok",
+      usage: { inputTokens: 10, outputTokens: 5 },
+      finishReason: "stop",
+    }))
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(traces)
+    // Inner session middleware throws, causing traces session catch to trigger
+    agent.use({
+      name: "exploding",
+      session: async () => { throw new Error("session crash") },
+    })
+
+    await expect(agent.run("hello").result).rejects.toThrow("session crash")
+
+    const sessionSpan = spans.find(s => s.name.startsWith("session.run"))!
+    expect(sessionSpan.status).toBe("error")
+    expect(sessionSpan.error?.type).toBe("Error")
+    expect(sessionSpan.error?.message).toBe("session crash")
+  })
+
+  it("session error — no session.close span when session hook errors", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+
+    const model = new FunctionModel(() => ({
+      text: "ok",
+      usage: { inputTokens: 10, outputTokens: 5 },
+      finishReason: "stop",
+    }))
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(traces)
+    agent.use({
+      name: "exploding",
+      session: async () => { throw new Error("crash") },
+    })
+
+    await expect(agent.run("hello").result).rejects.toThrow()
+
+    const closeSpan = spans.find(s => s.name.startsWith("session.close"))
+    expect(closeSpan).toBeUndefined()
+  })
+
+  it("tool error span — isError result produces error status", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+
+    const model = new FunctionModel((_messages, { callIndex }) => {
+      if (callIndex === 0) {
+        return {
+          text: undefined,
+          toolCalls: [{ toolCallId: "tc1", toolName: "fail_tool", args: {} }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: "tool-calls",
+        }
+      }
+      return { text: "recovered", usage: { inputTokens: 15, outputTokens: 10 }, finishReason: "stop" }
+    })
+
+    const failTool = toolsFunction({
+      name: "fail_tool",
+      description: "Fails",
+      schema: z.object({}),
+      execute: async () => { throw new Error("tool boom") },
+    })
+
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(defaults())
+    agent.use(failTool)
+    agent.use(traces)
+
+    await agent.run("hello").result
+
+    const toolSpan = spans.find(s => s.name.startsWith("tool.call"))
+    if (toolSpan) {
+      expect(toolSpan.status).toBe("error")
+      expect(toolSpan.error?.type).toBe("ToolExecutionError")
+    }
+  })
+
+  it("tool error with recordContent: true — error message is actual result", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ recordContent: true, output: (s) => spans.push(s) })
+
+    const model = new FunctionModel((_messages, { callIndex }) => {
+      if (callIndex === 0) {
+        return {
+          text: undefined,
+          toolCalls: [{ toolCallId: "tc1", toolName: "fail_tool", args: {} }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: "tool-calls",
+        }
+      }
+      return { text: "recovered", usage: { inputTokens: 15, outputTokens: 10 }, finishReason: "stop" }
+    })
+
+    const failTool = toolsFunction({
+      name: "fail_tool",
+      description: "Fails",
+      schema: z.object({}),
+      execute: async () => { throw new Error("detailed error msg") },
+    })
+
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(defaults())
+    agent.use(failTool)
+    agent.use(traces)
+
+    await agent.run("hello").result
+
+    const toolSpan = spans.find(s => s.name.startsWith("tool.call"))
+    if (toolSpan) {
+      expect(toolSpan.status).toBe("error")
+      // With recordContent the result is included
+      expect(toolSpan.attributes["gen_ai.tool.call.result"]).toBeDefined()
+    }
+  })
+
+  it("tool error without recordContent — generic error message", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ recordContent: false, output: (s) => spans.push(s) })
+
+    const model = new FunctionModel((_messages, { callIndex }) => {
+      if (callIndex === 0) {
+        return {
+          text: undefined,
+          toolCalls: [{ toolCallId: "tc1", toolName: "fail_tool", args: {} }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: "tool-calls",
+        }
+      }
+      return { text: "recovered", usage: { inputTokens: 15, outputTokens: 10 }, finishReason: "stop" }
+    })
+
+    const failTool = toolsFunction({
+      name: "fail_tool",
+      description: "Fails",
+      schema: z.object({}),
+      execute: async () => { throw new Error("secret error") },
+    })
+
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(defaults())
+    agent.use(failTool)
+    agent.use(traces)
+
+    await agent.run("hello").result
+
+    const toolSpan = spans.find(s => s.name.startsWith("tool.call"))
+    if (toolSpan) {
+      expect(toolSpan.error?.message).toBe("Tool execution failed")
+      expect(toolSpan.attributes["gen_ai.tool.call.arguments"]).toBeUndefined()
+      expect(toolSpan.attributes["gen_ai.tool.call.result"]).toBeUndefined()
+    }
+  })
+
+  it("tool catch — span has error status when tool middleware throws", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+
+    const model = new FunctionModel((_messages, { callIndex }) => {
+      if (callIndex === 0) {
+        return {
+          text: undefined,
+          toolCalls: [{ toolCallId: "tc1", toolName: "ok_tool", args: {} }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: "tool-calls",
+        }
+      }
+      return { text: "done", usage: { inputTokens: 15, outputTokens: 10 }, finishReason: "stop" }
+    })
+
+    const okTool = toolsFunction({
+      name: "ok_tool",
+      description: "Does nothing",
+      schema: z.object({}),
+      execute: async () => "ok",
+    })
+
+    const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
+    agent.use(defaults())
+    agent.use(okTool)
+    agent.use(traces)
+    // Tool middleware that throws — triggers the traces tool catch branch
+    agent.use({
+      name: "tool-thrower",
+      tool: async (_ctx, next) => {
+        await next()
+        throw new RangeError("tool middleware exploded")
+      },
+    })
+
+    await expect(agent.run("hello").result).rejects.toThrow("tool middleware exploded")
+
+    const toolSpan = spans.find(s => s.name.startsWith("tool.call"))
+    if (toolSpan) {
+      expect(toolSpan.status).toBe("error")
+      expect(toolSpan.error?.type).toBe("RangeError")
+      expect(toolSpan.error?.message).toBe("tool middleware exploded")
+    }
+  })
+
+  it("model span — gen_ai.operation.name reflects otel mode", async () => {
+    // Framework mode
+    const spans1: SpanData[] = []
+    const traces1 = observeTraces({ output: (s) => spans1.push(s) })
+    const agent1 = createSimpleAgent(traces1)
+    await agent1.run("hello").result
+
+    const modelSpan1 = spans1.find(s => s.name.startsWith("model.call"))!
+    expect(modelSpan1.attributes["gen_ai.operation.name"]).toBe("model.call")
+
+    // OTel mode
+    const spans2: SpanData[] = []
+    const traces2 = observeTraces({ otel: true, output: (s) => spans2.push(s) })
+    const agent2 = createSimpleAgent(traces2)
+    await agent2.run("hello").result
+
+    const modelSpan2 = spans2.find(s => s.name.startsWith("chat"))!
+    expect(modelSpan2.attributes["gen_ai.operation.name"]).toBe("chat")
+  })
+
+  it("model span — gen_ai.response.finish_reasons is array", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+    const agent = createSimpleAgent(traces)
+
+    await agent.run("hello").result
+
+    const modelSpan = spans.find(s => s.name.startsWith("model.call"))!
+    const finishReasons = modelSpan.attributes["gen_ai.response.finish_reasons"]
+    expect(Array.isArray(finishReasons)).toBe(true)
+    expect(finishReasons).toEqual(["stop"])
+  })
+
+  it("model span — usage tokens set correctly", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+    const agent = createSimpleAgent(traces)
+
+    await agent.run("hello").result
+
+    const modelSpan = spans.find(s => s.name.startsWith("model.call"))!
+    expect(modelSpan.attributes["gen_ai.usage.input_tokens"]).toBe(10)
+    expect(modelSpan.attributes["gen_ai.usage.output_tokens"]).toBe(5)
+  })
+
+  it("turn span — includes turn.id and turn.index from context", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ output: (s) => spans.push(s) })
+    const agent = createSimpleAgent(traces)
+
+    await agent.run("hello").result
+
+    const turnSpan = spans.find(s => s.name.startsWith("turn"))!
+    expect(turnSpan.attributes["agent_express.turn.id"]).toBeDefined()
+    expect(typeof turnSpan.attributes["agent_express.turn.id"]).toBe("string")
+    expect(turnSpan.attributes["agent_express.turn.index"]).toBe(0)
+  })
+
+  it("recordContent: true — output messages JSON includes assistant response", async () => {
+    const spans: SpanData[] = []
+    const traces = observeTraces({ recordContent: true, output: (s) => spans.push(s) })
+    const agent = createSimpleAgent(traces)
+
+    await agent.run("hello").result
+
+    const modelSpan = spans.find(s => s.name.startsWith("model.call"))!
+    const outputMsgs = modelSpan.attributes["gen_ai.output.messages"] as string
+    expect(outputMsgs).toBeDefined()
+    const parsed = JSON.parse(outputMsgs)
+    expect(parsed[0].role).toBe("assistant")
+    expect(parsed[0].content).toBe("Hello!")
+  })
 })
