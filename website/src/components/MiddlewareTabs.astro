@@ -60,9 +60,10 @@
 
         <!-- memory panel -->
         <div class="tab-panel panel-memory">
-          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">memory</span>.<span class="fn">compaction</span>({'{'}
-  <span class="prop">strategy</span>: <span class="str">"sliding-window"</span>,
-  <span class="prop">maxTokens</span>: <span class="num">8000</span>,
+          <pre><code><span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">memory</span>.<span class="fn">store</span>({'{'} <span class="prop">backend</span>: <span class="fn">sqliteStore</span>() {'}'}))  <span class="cmt">// session persistence</span>
+<span class="obj">agent</span>.<span class="fn">use</span>(<span class="ns">memory</span>.<span class="fn">compaction</span>({'{'}                       <span class="cmt">// context window management</span>
+  <span class="prop">strategy</span>: <span class="str">"hybrid"</span>,
+  <span class="prop">maxTokens</span>: <span class="num">8192</span>,
 {'}'}))</code></pre>
         </div>
 
