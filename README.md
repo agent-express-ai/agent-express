@@ -207,13 +207,39 @@ await agent.run({ input: "test", model: replay })
 | Cost control | `guard.budget()` | Manual | Manual | Manual |
 | TypeScript | Strict, ESM only | TypeScript | TypeScript | TypeScript |
 
-## Package Entry Points
+## Packages
+
+**Core:**
 
 ```
 agent-express       -- Agent, Session, middleware namespaces, errors
 agent-express/http  -- createHandler() SSE adapter
 agent-express/test  -- TestModel, FunctionModel, testAgent()
 ```
+
+**Presets:**
+
+| Package | Description |
+|---|---|
+| `@agent-express/preset-support` | Production support bot (RAG, PII, tone, escalation, rate limiting) |
+
+**Adapter packages:**
+
+| Package | Description |
+|---|---|
+| `@agent-express/embed-openai` | OpenAI text-embedding-3-small |
+| `@agent-express/embed-cohere` | Cohere embed-v3 |
+| `@agent-express/search-brave` | Brave Search API |
+| `@agent-express/search-tavily` | Tavily Search API |
+| `@agent-express/search-exa` | Exa semantic search |
+| `@agent-express/search-llamaindex` | LlamaIndex.TS file ingestion + cosine similarity |
+| `@agent-express/search-qdrant` | Qdrant vector DB retriever |
+| `@agent-express/search-pinecone` | Pinecone vector DB retriever |
+| `@agent-express/search-pgvector` | PostgreSQL pgvector retriever |
+| `@agent-express/session-sqlite` | SQLite session store (better-sqlite3) |
+| `@agent-express/session-redis` | Redis session store (ioredis) |
+| `@agent-express/session-postgres` | PostgreSQL session store (pg) |
+| `@agent-express/session-openai` | OpenAI Conversation API store |
 
 ## CLI
 
