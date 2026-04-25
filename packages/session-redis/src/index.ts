@@ -19,12 +19,15 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
   const prefix = config?.prefix ?? "agent-express:session:"
   const ttl = config?.ttl
 
-  let client: import("ioredis").default | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any = null
 
-  async function getClient(): Promise<import("ioredis").default> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function getClient(): Promise<any> {
     if (!client) {
-      const { default: Redis } = await import("ioredis")
-      client = new Redis(url)
+      const ioredis = await import("ioredis")
+      const Redis = ioredis.default ?? ioredis
+      client = new (Redis as any)(url)
     }
     return client
   }
@@ -39,7 +42,7 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
       if (!data) return null
       const parsed = JSON.parse(data) as Omit<SessionData, "history">
       const msgs = await r.lrange(msgsKey(sessionId), 0, -1)
-      const history = msgs.map(m => JSON.parse(m) as Message)
+      const history = msgs.map((m: string) => JSON.parse(m) as Message)
       return { ...parsed, history }
     },
 
@@ -75,7 +78,7 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
       const limit = opts?.limit ?? 1000
       const offset = opts?.offset ?? 0
       const msgs = await r.lrange(msgsKey(sessionId), 0, -1)
-      const parsed = msgs.map(m => JSON.parse(m) as Message)
+      const parsed = msgs.map((m: string) => JSON.parse(m) as Message)
       if (order === "desc") parsed.reverse()
       return parsed.slice(offset, offset + limit)
     },

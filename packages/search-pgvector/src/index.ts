@@ -36,8 +36,9 @@ export function pgvectorRetriever(config: PgvectorRetrieverConfig): (query: stri
 
   return async (query: string): Promise<Chunk[]> => {
     const vector = await embed(query)
-    const { default: pg } = await import("pg")
-    const client = new pg.Client({ connectionString })
+    const pg = await import("pg") as any
+    const Pg = pg.default ?? pg
+    const client = new Pg.Client({ connectionString })
     await client.connect()
     try {
       const vectorStr = `[${vector.join(",")}]`

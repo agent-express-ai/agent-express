@@ -37,12 +37,13 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
   const dbPath = config?.path ?? "./sessions.db"
 
   // Lazy init — don't import better-sqlite3 until first use
-  let db: import("better-sqlite3").Database | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let db: any = null
 
-  function getDb(): import("better-sqlite3").Database {
+  function getDb(): any {
     if (!db) {
       const req = createRequire(import.meta.url)
-      const Database = req("better-sqlite3") as typeof import("better-sqlite3").default
+      const Database = req("better-sqlite3")
       db = new Database(dbPath)
       db.pragma("journal_mode = WAL")
       db.exec(`

@@ -121,11 +121,11 @@ export function llamaindexRetriever(config: LlamaIndexRetrieverConfig): (query: 
 
     scored.sort((a, b) => b.score - a.score)
 
-    return scored.slice(0, topK).map((doc) => ({
-      text: doc.text,
-      score: doc.score,
-      source: doc.source ? { title: doc.source } : undefined,
-    }))
+    return scored.slice(0, topK).map((doc) => {
+      const chunk: Chunk = { text: doc.text, score: doc.score }
+      if (doc.source) chunk.source = { title: doc.source }
+      return chunk
+    })
   }
 }
 

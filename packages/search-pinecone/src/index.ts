@@ -36,10 +36,13 @@ export function pineconeRetriever(config: PineconeRetrieverConfig): (query: stri
     if (!response.ok) throw new Error(`Pinecone query failed: ${response.status}`)
     const data = await response.json() as { matches: Array<{ score: number; metadata?: Record<string, unknown> }> }
 
-    return (data.matches ?? []).map((m) => ({
-      text: String(m.metadata?.["text"] ?? m.metadata?.["content"] ?? ""),
-      score: m.score,
-      source: m.metadata?.["source"] ? { title: String(m.metadata["source"]) } : undefined,
-    }))
+    return (data.matches ?? []).map((m) => {
+      const chunk: Chunk = {
+        text: String(m.metadata?.["text"] ?? m.metadata?.["content"] ?? ""),
+        score: m.score,
+      }
+      if (m.metadata?.["source"]) chunk.source = { title: String(m.metadata["source"]) }
+      return chunk
+    })
   }
 }

@@ -43,10 +43,13 @@ export function qdrantRetriever(config: QdrantRetrieverConfig): (query: string) 
     if (!response.ok) throw new Error(`Qdrant search failed: ${response.status}`)
 
     const data = await response.json() as { result: Array<{ score: number; payload?: Record<string, unknown> }> }
-    return data.result.map((r) => ({
-      text: String(r.payload?.["text"] ?? r.payload?.["content"] ?? ""),
-      score: r.score,
-      source: r.payload?.["source"] ? { title: String(r.payload["source"]) } : undefined,
-    }))
+    return data.result.map((r) => {
+      const chunk: Chunk = {
+        text: String(r.payload?.["text"] ?? r.payload?.["content"] ?? ""),
+        score: r.score,
+      }
+      if (r.payload?.["source"]) chunk.source = { title: String(r.payload["source"]) }
+      return chunk
+    })
   }
 }

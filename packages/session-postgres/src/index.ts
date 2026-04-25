@@ -14,12 +14,15 @@ export function postgresStore(config?: PostgresStoreConfig): SessionStore {
   const connectionString = config?.connectionString ?? process.env["DATABASE_URL"]
   if (!connectionString) throw new Error("PostgreSQL connection string required. Set DATABASE_URL or pass connectionString.")
 
-  let pool: import("pg").Pool | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let pool: any = null
 
-  async function getPool(): Promise<import("pg").Pool> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function getPool(): Promise<any> {
     if (!pool) {
-      const { default: pg } = await import("pg")
-      pool = new pg.Pool({ connectionString })
+      const pg = await import("pg") as any
+      const Pg = pg.default ?? pg
+      pool = new Pg.Pool({ connectionString })
     }
     return pool
   }
