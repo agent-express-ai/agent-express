@@ -3,7 +3,7 @@ import { z } from "zod"
 import {
   EventLog,
   nextEventId,
-  mergeVocabularies,
+  mergeEventTypeMaps,
   validateEmit,
   deriveHistory,
   CORE_EVENT_TYPES,
@@ -87,7 +87,7 @@ describe("event-log: nextEventId", () => {
   })
 })
 
-describe("event-log: mergeVocabularies + validateEmit", () => {
+describe("event-log: mergeEventTypeMaps + validateEmit", () => {
   it("merges core + middleware vocabularies", () => {
     const mw: Middleware = {
       name: "channel-test",
@@ -95,7 +95,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
         "channel:test:msg": { schema: z.object({ text: z.string() }), schemaVersion: 1 },
       },
     }
-    const merged = mergeVocabularies([mw])
+    const merged = mergeEventTypeMaps([mw])
     expect("channel:test:msg" in merged).toBe(true)
     expect("user:input" in merged).toBe(true) // core preserved
   })
@@ -109,7 +109,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
       name: "b",
       events: { "x:y": { schema: z.unknown(), schemaVersion: 1 } },
     }
-    expect(() => mergeVocabularies([a, b])).toThrow(EventTypeCollisionError)
+    expect(() => mergeEventTypeMaps([a, b])).toThrow(EventTypeCollisionError)
   })
 
   it("throws EventTypeCollisionError when middleware redeclares a core type", () => {
@@ -117,7 +117,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
       name: "naughty",
       events: { "user:input": { schema: z.unknown(), schemaVersion: 1 } },
     }
-    expect(() => mergeVocabularies([mw])).toThrow(EventTypeCollisionError)
+    expect(() => mergeEventTypeMaps([mw])).toThrow(EventTypeCollisionError)
   })
 
   it("throws EventTypeCollisionError when middleware claims a reserved-only type", () => {
@@ -125,16 +125,16 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
       name: "early-bird",
       events: { "agent:handoff": { schema: z.unknown(), schemaVersion: 1 } },
     }
-    expect(() => mergeVocabularies([mw])).toThrow(EventTypeCollisionError)
+    expect(() => mergeEventTypeMaps([mw])).toThrow(EventTypeCollisionError)
   })
 
   it("throws UnknownEventTypeError on emit of an unregistered type", () => {
-    const merged = mergeVocabularies([])
+    const merged = mergeEventTypeMaps([])
     expect(() => validateEmit(merged, "channel:nonexistent", { text: "x" })).toThrow(UnknownEventTypeError)
   })
 
   it("throws EventValidationError on bad payload", () => {
-    const merged = mergeVocabularies([])
+    const merged = mergeEventTypeMaps([])
     expect(() => validateEmit(merged, "user:input", { wrongField: 42 })).toThrow(EventValidationError)
   })
 
@@ -148,7 +148,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
         },
       },
     }
-    const merged = mergeVocabularies([mw])
+    const merged = mergeEventTypeMaps([mw])
     expect(() =>
       validateEmit(merged, "channel:loose", { payload: () => "no" }),
     ).toThrow(EventSerializationError)
@@ -161,7 +161,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
         "channel:loose": { schema: z.any(), schemaVersion: 1 },
       },
     }
-    const merged = mergeVocabularies([mw])
+    const merged = mergeEventTypeMaps([mw])
     type Circular = { self?: Circular }
     const circ: Circular = {}
     circ.self = circ
@@ -169,7 +169,7 @@ describe("event-log: mergeVocabularies + validateEmit", () => {
   })
 })
 
-describe("event-log: core vocabulary completeness", () => {
+describe("event-log: core event-type map completeness", () => {
   it("declares all expected core-emitted types", () => {
     const expected = [
       "user:input",
@@ -207,7 +207,7 @@ describe("event-log: core vocabulary completeness", () => {
   })
 
   it("turn:end carries a status enum that distinguishes the three outcomes", () => {
-    const merged = mergeVocabularies([])
+    const merged = mergeEventTypeMaps([])
     // Valid statuses
     expect(() =>
       validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "completed" }),
@@ -225,7 +225,7 @@ describe("event-log: core vocabulary completeness", () => {
   })
 
   it("schema-completeness: each emitted type carries the fields a reader needs", () => {
-    const merged = mergeVocabularies([])
+    const merged = mergeEventTypeMaps([])
     expect(() =>
       validateEmit(merged, "model:response", { text: "ok", usage: { inputTokens: 1, outputTokens: 2 } }),
     ).not.toThrow()

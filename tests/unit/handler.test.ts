@@ -64,7 +64,7 @@ describe("createHandler()", () => {
     expect(response.headers.get("Content-Type")).toBe("text/event-stream")
 
     const events = await collectSSE(response)
-    const sessionEnd = events.find((e) => e["type"] === "session:end") as Record<string, unknown> | undefined
+    const sessionEnd = events.find((e) => e["type"] === "result") as Record<string, unknown> | undefined
     expect(sessionEnd).toBeDefined()
 
     const result = sessionEnd?.["result"] as Record<string, unknown>
@@ -100,8 +100,8 @@ describe("createHandler()", () => {
     const events1 = await collectSSE(handler(makeRequest("first")))
     const events2 = await collectSSE(handler(makeRequest("second")))
 
-    const text1 = ((events1.find((e) => e["type"] === "session:end") as Record<string, unknown>)?.["result"] as Record<string, unknown>)?.["text"] as string
-    const text2 = ((events2.find((e) => e["type"] === "session:end") as Record<string, unknown>)?.["result"] as Record<string, unknown>)?.["text"] as string
+    const text1 = ((events1.find((e) => e["type"] === "result") as Record<string, unknown>)?.["result"] as Record<string, unknown>)?.["text"] as string
+    const text2 = ((events2.find((e) => e["type"] === "result") as Record<string, unknown>)?.["result"] as Record<string, unknown>)?.["text"] as string
 
     const msgCount1 = parseInt((text1.match(/messages: (\d+)/) ?? [])[1] ?? "0")
     const msgCount2 = parseInt((text2.match(/messages: (\d+)/) ?? [])[1] ?? "0")
@@ -139,12 +139,12 @@ describe("createHandler()", () => {
 
     // First request with session ID
     const events1 = await collectSSE(handler(makeRequest("hello", "session-1")))
-    const result1 = (events1.find((e) => e["type"] === "session:end") as Record<string, unknown>)?.["result"] as Record<string, unknown>
+    const result1 = (events1.find((e) => e["type"] === "result") as Record<string, unknown>)?.["result"] as Record<string, unknown>
     expect(result1?.["text"]).toContain("call 1")
 
     // Second request with SAME session ID — should have history from first request
     const events2 = await collectSSE(handler(makeRequest("follow up", "session-1")))
-    const result2 = (events2.find((e) => e["type"] === "session:end") as Record<string, unknown>)?.["result"] as Record<string, unknown>
+    const result2 = (events2.find((e) => e["type"] === "result") as Record<string, unknown>)?.["result"] as Record<string, unknown>
     expect(result2?.["text"]).toContain("call 2")
 
     // Second call should have more messages (history from first exchange)
@@ -185,7 +185,7 @@ describe("createHandler()", () => {
 
     // One request to session-B — should NOT have session-A's history
     const eventsB = await collectSSE(handler(makeRequest("hello", "session-B")))
-    const resultB = (eventsB.find((e) => e["type"] === "session:end") as Record<string, unknown>)?.["result"] as Record<string, unknown>
+    const resultB = (eventsB.find((e) => e["type"] === "result") as Record<string, unknown>)?.["result"] as Record<string, unknown>
     const textB = resultB?.["text"] as string
 
     // session-B should have minimal messages (system + user), not session-A's accumulated history
@@ -236,7 +236,7 @@ describe("createHandler()", () => {
 
     // Reuse same session — should work even though limit is 1
     const events = await collectSSE(handler(makeRequest("second", "s1")))
-    const sessionEnd = events.find((e) => e["type"] === "session:end")
+    const sessionEnd = events.find((e) => e["type"] === "result")
     expect(sessionEnd).toBeDefined()
   })
 })
@@ -281,7 +281,7 @@ describe("toExpressHandler()", () => {
 
     expect(res.end).toHaveBeenCalled()
     const output = res._data.join("")
-    expect(output).toContain("session:end")
+    expect(output).toContain("result")
     expect(output).toContain("hello from express")
   })
 })
@@ -322,7 +322,7 @@ describe("toFastifyHandler()", () => {
 
     expect(reply.raw.end).toHaveBeenCalled()
     const output = reply._data.join("")
-    expect(output).toContain("session:end")
+    expect(output).toContain("result")
     expect(output).toContain("hello from fastify")
   })
 })

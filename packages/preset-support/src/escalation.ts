@@ -87,7 +87,13 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
       // Check threshold
       if (counter >= threshold) {
         ctx.output = escalationMessage
-        ctx.emit({ type: "error", error: new Error(`Escalation safety-net triggered after ${threshold} unproductive turns`) })
+        ctx.emit({
+          type: "error",
+          payload: {
+            kind: "EscalationSafetyNet",
+            message: `Escalation safety-net triggered after ${threshold} unproductive turns`,
+          },
+        })
 
         ctx.state["support:escalation"] = {
           triggered: true,

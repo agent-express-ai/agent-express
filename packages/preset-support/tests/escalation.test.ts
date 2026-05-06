@@ -123,7 +123,7 @@ describe("agent.escalation() — integration", () => {
 
     await session.run("msg 1").result
 
-    const events: import("../../../src/types.js").StreamEvent[] = []
+    const events: import("../../../src/types.js").Event[] = []
     const run = session.run("msg 2")
     for await (const event of run) {
       events.push(event)
@@ -131,7 +131,8 @@ describe("agent.escalation() — integration", () => {
 
     const errorEvents = events.filter((e) => e.type === "error")
     expect(errorEvents.length).toBeGreaterThan(0)
-    expect((errorEvents[0] as any).error.message).toContain("Escalation safety-net triggered")
+    const payload = errorEvents[0]!.payload as { kind: string; message: string }
+    expect(payload.message).toContain("Escalation safety-net triggered")
 
     await session.close()
     await agent.dispose()

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { Agent } from "../../src/agent.js"
 import type { LanguageModelV3, LanguageModelV3GenerateResult } from "@ai-sdk/provider"
-import type { Middleware } from "../../src/middleware.js"
 import { SessionClosedError, SessionBusyError } from "../../src/errors.js"
 
 function createMockModel(text = "response"): LanguageModelV3 {
@@ -235,7 +234,7 @@ describe("Session API", () => {
       await agent.init()
       const session = agent.session()
 
-      const events: import("../../src/types.js").StreamEvent[] = []
+      const events: import("../../src/types.js").Event[] = []
       for await (const event of session.run("Hello")) {
         events.push(event)
       }

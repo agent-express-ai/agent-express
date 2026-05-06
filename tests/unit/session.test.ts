@@ -35,12 +35,27 @@ describe("SessionState", () => {
     expect(() => session.start()).toThrow("Cannot start session")
   })
 
-  it("appends messages to history", () => {
+  it("derives history from event log via user:input + model:response projection", () => {
     const session = new SessionState(undefined, [])
-    session.addMessage({ role: "user", content: "hello" })
-    session.addMessage({ role: "assistant", content: "hi" })
+    session.eventLog.append({
+      id: "01",
+      ts: 1,
+      type: "user:input",
+      schemaVersion: 1,
+      payload: { text: "hello" },
+    })
+    session.eventLog.append({
+      id: "02",
+      ts: 2,
+      type: "model:response",
+      schemaVersion: 1,
+      payload: { text: "hi" },
+    })
     expect(session.history).toHaveLength(2)
     expect(session.history[0]!.role).toBe("user")
+    expect(session.history[0]!.content).toBe("hello")
+    expect(session.history[1]!.role).toBe("assistant")
+    expect(session.history[1]!.content).toBe("hi")
   })
 
   it("initializes state from schemas", () => {

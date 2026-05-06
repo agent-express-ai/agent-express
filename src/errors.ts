@@ -289,7 +289,7 @@ export class EventSerializationError extends AgentExpressError {
   }
 }
 
-/** Thrown at emit time when the type isn't in the merged event vocabulary. */
+/** Thrown at emit time when the type isn't in the merged event-type map. */
 export class UnknownEventTypeError extends AgentExpressError {
   /** The unknown event type the caller tried to emit. */
   readonly type: string

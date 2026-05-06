@@ -1,11 +1,11 @@
 /**
- * Vocabulary merging and emit-time validation.
+ * Registry merging and emit-time validation.
  *
- * Builds the per-agent merged event vocabulary at construction by combining
- * the core vocabulary with each middleware's `events` declarations.
+ * Builds the per-agent merged event-type map at construction by combining
+ * the core event-type map with each middleware's `events` declarations.
  * Throws `EventTypeCollisionError` when the same name is declared twice.
  *
- * At emit time, validates `{ type, payload }` against the merged vocabulary —
+ * At emit time, validates `{ type, payload }` against the merged event-type map —
  * unknown types throw `UnknownEventTypeError`; bad payload shapes throw
  * `EventValidationError`; payloads that pass Zod but fail JSON serialization
  * throw `EventSerializationError`.
@@ -19,20 +19,20 @@ import {
   EventSerializationError,
   UnknownEventTypeError,
 } from "../errors.js"
-import { CORE_EVENT_VOCABULARY } from "./events.js"
+import { CORE_EVENT_TYPE_MAP } from "./events.js"
 
 /**
- * Merge core event vocabulary with middleware-declared schemas into a
- * single per-agent vocabulary. Throws on collisions.
+ * Merge core event-type map with middleware-declared schemas into a
+ * single per-agent event-type map. Throws on collisions.
  *
  * @param middlewares - The middleware list registered on the agent.
- * @returns Merged vocabulary suitable for emit-time lookup + validation.
+ * @returns Merged event-type map suitable for emit-time lookup + validation.
  */
-export function mergeVocabularies(middlewares: readonly Middleware[]): EventTypeMap {
-  const merged: Record<string, EventTypeSchema> = { ...CORE_EVENT_VOCABULARY }
+export function mergeEventTypeMaps(middlewares: readonly Middleware[]): EventTypeMap {
+  const merged: Record<string, EventTypeSchema> = { ...CORE_EVENT_TYPE_MAP }
   const owners = new Map<string, string[]>()
   // Seed owners with core for collision messages
-  for (const type of Object.keys(CORE_EVENT_VOCABULARY)) {
+  for (const type of Object.keys(CORE_EVENT_TYPE_MAP)) {
     owners.set(type, ["core"])
   }
 
@@ -54,11 +54,11 @@ export function mergeVocabularies(middlewares: readonly Middleware[]): EventType
 
 /** Emit-time validation. Returns the parsed payload (post-Zod) on success. */
 export function validateEmit(
-  vocabulary: EventTypeMap,
+  eventTypeMap: EventTypeMap,
   type: string,
   payload: unknown,
 ): { schemaVersion: number; payload: unknown } {
-  const schema = vocabulary[type]
+  const schema = eventTypeMap[type]
   if (!schema) {
     throw new UnknownEventTypeError(type)
   }

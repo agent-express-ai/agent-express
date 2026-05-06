@@ -1,5 +1,5 @@
 /**
- * Core event vocabulary — the closed-vocabulary event types the framework
+ * Core event-type map — the closed event-type map event types the framework
  * itself ships, with their Zod payload schemas.
  *
  * Three categories:
@@ -173,17 +173,17 @@ export const RESERVED_ONLY_CORE_EVENTS: EventTypeMap = {
   "model:reasoning:end": placeholder(),
 }
 
-// ─── Aggregated core vocabulary ───────────────────────────────────────
+// ─── Aggregated core event-type map ───────────────────────────────────────
 
 /**
  * Full set of event-type names owned by core. Used by the merger to detect
  * collisions when a middleware tries to declare a name core has already claimed.
  */
-export const CORE_EVENT_VOCABULARY: EventTypeMap = {
+export const CORE_EVENT_TYPE_MAP: EventTypeMap = {
   ...EMITTED_CORE_EVENTS,
   ...RESERVED_EMITTED_CORE_EVENTS,
   ...RESERVED_ONLY_CORE_EVENTS,
 }
 
 /** Frozen set of all core event-type names (for fast lookup). */
-export const CORE_EVENT_TYPES: ReadonlySet<string> = new Set(Object.keys(CORE_EVENT_VOCABULARY))
+export const CORE_EVENT_TYPES: ReadonlySet<string> = new Set(Object.keys(CORE_EVENT_TYPE_MAP))

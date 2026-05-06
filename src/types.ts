@@ -364,8 +364,8 @@ export interface EventTypeSchema<T = unknown> {
 /**
  * A record of event-type names → their schemas.
  *
- * Used by `Middleware.events` (per-middleware vocabulary slice) and by the
- * framework's merged-vocabulary type after `agent.use()` chaining merges all
+ * Used by `Middleware.events` (per-middleware event-type map slice) and by the
+ * framework's merged-event-type-map type after `agent.use()` chaining merges all
  * declarations into one map.
  */
 export type EventTypeMap = Record<string, EventTypeSchema>
@@ -487,25 +487,28 @@ export interface RunResult {
   data?: unknown
 }
 
-// ─── Stream Events ─────────────────────────────────────
+// ─── Emit input ────────────────────────────────────────
 
 /**
- * Discriminated union of all events emitted during agent execution.
+ * Shape passed to `ctx.emit(...)`. The framework auto-populates `id`
+ * (UUIDv7), `ts` (wall-clock ms), and `schemaVersion` (from the declared
+ * event-type map). Caller supplies only `type` and `payload`.
  *
- * Events follow the lifecycle nesting: session → turn → model/tool.
- * Consumers iterate over these via `for await (const event of agent.run(...))`.
+ * Loose typing by design — `type: string`, `payload: unknown`. Compile-time
+ * payload safety is achieved locally by middleware authors via
+ * `z.infer<typeof MySchema>` against their declared schemas; runtime
+ * safety comes from Zod validation against the merged event-type map
+ * at emit time.
+ *
+ * Streaming consumers of `for await (const event of agent.run(...))`
+ * receive full `Event` objects — same shape as `Session.events`, same IDs.
  */
-export type StreamEvent =
-  | { type: "session:start"; sessionId: string }
-  | { type: "session:end"; sessionId: string; result: RunResult }
-  | { type: "turn:start"; turnIndex: number; turnId: string }
-  | { type: "turn:end"; turnIndex: number; turnId: string; text: string }
-  | { type: "model:start"; model: string; callIndex: number }
-  | { type: "model:chunk"; callIndex: number; text: string }
-  | { type: "model:end"; callIndex: number; finishReason: string }
-  | { type: "tool:start"; tool: string; args: Record<string, unknown>; callId: string }
-  | { type: "tool:end"; tool: string; callId: string; result: unknown }
-  | { type: "error"; error: Error }
+export interface EmitInput {
+  /** Discriminator (e.g., "user:input", "channel:slack:inbound"). */
+  type: string
+  /** Validated against the declared Zod schema for `type`. */
+  payload: unknown
+}
 
 // ─── State Schema ──────────────────────────────────────
 

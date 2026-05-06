@@ -1,18 +1,22 @@
-import type { Message, StateSchema } from "./types.js"
+import type { Message, StateSchema, Event } from "./types.js"
 import { createSessionState, snapshotState } from "./state.js"
+import { EventLog } from "./event-log/event-log.js"
+import { deriveHistory } from "./event-log/derive-history.js"
 
 /** Possible lifecycle states for a session. */
 export type SessionStatus = "created" | "running" | "completed" | "failed"
 
 /**
- * Represents a single conversation session.
+ * Internal runtime state of one session.
  *
- * A session is created for each `agent.run()` call. It holds the conversation
- * history (append-only), session state (from middleware declarations), and
- * tracks lifecycle transitions.
+ * Owns the canonical {@link EventLog} for the session and exposes a
+ * derived `Message[]` view via {@link history}. State (middleware data
+ * + developer keys) lives on a separate object — events are the
+ * canonical record of what happened, state is the projection of
+ * accumulated effects.
  *
- * Sessions are in-memory for now — no persistence across process restarts.
- * Durable sessions (checkpoint/resume) are planned for Phase 6.
+ * Public consumers should not touch this class directly — use the public
+ * `Session` surface (`session.events`, `session.history`, `session.state`).
  */
 export class SessionState {
   /** Unique session identifier (auto-generated UUID or user-provided). */
@@ -24,34 +28,48 @@ export class SessionState {
   /**
    * Session state shared across all turns and middleware.
    * Created from merged middleware `state` declarations.
-   * Supports typed defaults and optional reducers.
    */
   readonly state: Record<string, unknown>
 
-  /** Append-only conversation history. Contains all user, assistant, and tool messages. */
-  readonly history: Message[] = []
+  /** Canonical append-only event log for this session. */
+  readonly eventLog: EventLog = new EventLog()
 
   /** Timestamp when the session was created. */
   readonly startedAt: number
 
   /**
-   * Optional maximum number of messages to keep in history.
-   * When exceeded, oldest messages are dropped (FIFO).
-   * Prevents unbounded memory growth in long-running sessions.
-   * Default: undefined (no limit).
+   * Optional maximum number of derived history entries to keep visible.
+   * The events themselves are never trimmed (append-only log) — `maxHistory`
+   * only bounds the {@link history} view used for context windowing.
    */
   readonly maxHistory: number | undefined
 
   /**
    * @param sessionId - Optional custom session ID. Auto-generated UUID if omitted.
    * @param stateSchemas - State declarations from all middleware that declare `state`.
-   * @param maxHistory - Optional maximum history length. Oldest messages are dropped when exceeded.
+   * @param maxHistory - Optional bound on the derived history view.
    */
   constructor(sessionId: string | undefined, stateSchemas: StateSchema[], maxHistory?: number) {
     this.id = sessionId ?? crypto.randomUUID()
     this.state = createSessionState(stateSchemas)
     this.startedAt = Date.now()
     this.maxHistory = maxHistory
+  }
+
+  /** All events emitted in this session so far. */
+  get events(): readonly Event[] {
+    return this.eventLog.events
+  }
+
+  /**
+   * Derived `Message[]` view computed from {@link events} on read.
+   *
+   * Replaces v0.3's mutable `history` array. The events are the canonical
+   * record; the `Message[]` view is recomputed each call. For typical
+   * sessions (10–100 events) the cost is microseconds.
+   */
+  get history(): Message[] {
+    return deriveHistory(this.eventLog.events, this.maxHistory)
   }
 
   /** Transition from `created` to `running`. Throws if not in `created` state. */
@@ -65,19 +83,13 @@ export class SessionState {
   /** Transition to `completed` state. */
   complete(): void {
     this.status = "completed"
+    this.eventLog.close()
   }
 
   /** Transition to `failed` state. */
   fail(): void {
     this.status = "failed"
-  }
-
-  /** Append a message to the conversation history. Trims oldest if maxHistory is set. */
-  addMessage(msg: Message): void {
-    this.history.push(msg)
-    if (this.maxHistory && this.history.length > this.maxHistory) {
-      this.history.splice(0, this.history.length - this.maxHistory)
-    }
+    this.eventLog.close()
   }
 
   /**

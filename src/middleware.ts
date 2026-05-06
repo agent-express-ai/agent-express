@@ -1,4 +1,4 @@
-import type { StateSchema, EventTypeMap, Tool, Message, StreamEvent, ModelResponse, ToolResult } from "./types.js"
+import type { StateSchema, EventTypeMap, Tool, Message, EmitInput, ModelResponse, ToolResult } from "./types.js"
 
 /**
  * Context available during the `agent` onion hook.
@@ -32,8 +32,19 @@ export interface SessionContext extends AgentContext {
   state: Record<string, unknown>
   /** Canonical conversation history (append-only). */
   history: Message[]
-  /** Emit a stream event to the consumer. */
-  emit(event: StreamEvent): void
+  /**
+   * Emit a typed event to the session's event log. Synchronous — appends to
+   * the in-memory log (read-your-writes), notifies live streaming consumers,
+   * and queues the durable write to the configured `SessionStore.appendEvent`.
+   *
+   * `id` (UUIDv7), `ts`, and `schemaVersion` are auto-populated by the framework.
+   *
+   * @throws {UnknownEventTypeError} if `type` is not in the merged event-type map
+   * @throws {EventValidationError} if `payload` fails the declared Zod schema
+   * @throws {EventSerializationError} if the validated payload cannot be JSON-stringified
+   * @throws {EventOutsideSessionError} if called after the session has ended
+   */
+  emit(input: EmitInput): void
 }
 
 /**
@@ -161,7 +172,7 @@ export interface Middleware {
    *
    * Symmetric with `state` — a record of name → declaration. At agent
    * construction the framework merges this with core schemas and with
-   * every other middleware's schemas into one per-agent vocabulary;
+   * every other middleware's schemas into one per-agent event-type map;
    * collisions throw `EventTypeCollisionError`. Emitting a type not
    * declared here (or by core / another middleware) throws
    * `UnknownEventTypeError` at emit time. Payload validation runs
