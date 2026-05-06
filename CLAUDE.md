@@ -48,7 +48,7 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 **Adapter packages** (`@agent-express/*`):
 - Embed: `embed-openai`, `embed-cohere`
 - Search: `search-brave`, `search-tavily`, `search-exa`, `search-qdrant`, `search-pinecone`, `search-pgvector`, `search-llamaindex`
-- Session: `session-sqlite`, `session-redis`, `session-postgres`, `session-openai`
+- Session: `session-sqlite`, `session-redis`, `session-postgres`
 
 **RunResult:** Minimal — `{ text, state, data? }`. All metadata in state via middleware.
 
@@ -196,8 +196,7 @@ packages/
 ├── search-llamaindex/     # LlamaIndex.TS file ingestion
 ├── session-sqlite/        # SQLite via better-sqlite3
 ├── session-redis/         # Redis via ioredis
-├── session-postgres/      # PostgreSQL via pg (Pool + transactions)
-└── session-openai/        # OpenAI Conversation API (messages only)
+└── session-postgres/      # PostgreSQL via pg (Pool + transactions)
 ```
 
 ## CLI Commands

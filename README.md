@@ -239,7 +239,6 @@ agent-express/test  -- TestModel, FunctionModel, testAgent()
 | `@agent-express/session-sqlite` | SQLite session store (better-sqlite3) |
 | `@agent-express/session-redis` | Redis session store (ioredis) |
 | `@agent-express/session-postgres` | PostgreSQL session store (pg) |
-| `@agent-express/session-openai` | OpenAI Conversation API store |
 
 ## CLI
 
