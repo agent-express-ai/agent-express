@@ -218,6 +218,7 @@ export {
   nextEventId,
   mergeEventTypeMaps,
   deriveHistory,
+  typedEvents,
   CORE_EVENT_TYPE_MAP,
   EMITTED_CORE_EVENTS,
   RESERVED_EMITTED_CORE_EVENTS,

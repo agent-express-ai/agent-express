@@ -17,6 +17,7 @@ export { Writer } from "./writer.js"
 export { nextEventId } from "./id.js"
 export { mergeEventTypeMaps, validateEmit } from "./validate.js"
 export { deriveHistory } from "./derive-history.js"
+export { typedEvents } from "./typed-events.js"
 export {
   CORE_EVENT_TYPE_MAP,
   CORE_EVENT_TYPES,
