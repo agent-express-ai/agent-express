@@ -1,5 +1,5 @@
 import type { Middleware, SessionContext } from "../../middleware.js"
-import type { SessionStore, SessionData } from "../../types.js"
+import type { SessionStore, SessionData, EventEnvelope } from "../../types.js"
 
 /**
  * Configuration for the `memory.store()` middleware.
@@ -37,33 +37,30 @@ export function memoryStore(config: MemoryStoreConfig): Middleware {
     async session(ctx: SessionContext, next: () => Promise<void>): Promise<void> {
       let backendAvailable = true
 
-      // Load session if it exists
+      // TODO: replay events into Session.events when SessionContext exposes the event log.
+      // For now, load restores state only; per-event writes go through SessionStore.appendEvent.
       try {
         const data = await backend.load(ctx.sessionId)
         if (data) {
-          // Restore state
           for (const [key, value] of Object.entries(data.state)) {
             ctx.state[key] = value
           }
-          // Restore history
-          for (const msg of data.history) {
-            ctx.history.push(msg)
-          }
         }
       } catch {
-        // Fallback to in-memory — log warning but don't block
         backendAvailable = false
       }
 
       try {
         await next()
       } finally {
-        // Save session after all turns complete
         if (backendAvailable) {
           try {
+            // TODO: source events from Session.events once exposed; per-event persistence
+            // goes through SessionStore.appendEvent during the turn.
+            const events: EventEnvelope[] = []
             const sessionData: SessionData = {
               state: { ...ctx.state },
-              history: [...ctx.history],
+              events,
               createdAt: Date.now(),
               updatedAt: Date.now(),
             }

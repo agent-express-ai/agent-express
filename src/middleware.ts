@@ -1,4 +1,4 @@
-import type { StateSchema, Tool, Message, StreamEvent, ModelResponse, ToolResult } from "./types.js"
+import type { StateSchema, EventTypeMap, Tool, Message, StreamEvent, ModelResponse, ToolResult } from "./types.js"
 
 /**
  * Context available during the `agent` onion hook.
@@ -156,6 +156,37 @@ export interface Middleware {
   name: string
   /** Session state field declarations with defaults and optional reducers. */
   state?: StateSchema
+  /**
+   * Event-type schemas this middleware emits.
+   *
+   * Symmetric with `state` — a record of name → declaration. At agent
+   * construction the framework merges this with core schemas and with
+   * every other middleware's schemas into one per-agent vocabulary;
+   * collisions throw `EventTypeCollisionError`. Emitting a type not
+   * declared here (or by core / another middleware) throws
+   * `UnknownEventTypeError` at emit time. Payload validation runs
+   * against this Zod schema before the event is written.
+   *
+   * @example
+   * ```typescript
+   * import { z } from "zod"
+   *
+   * const slackChannel: Middleware = {
+   *   name: "slack-channel",
+   *   events: {
+   *     "channel:slack:inbound": {
+   *       schema: z.object({ channel: z.string(), text: z.string() }),
+   *       schemaVersion: 1,
+   *     },
+   *   },
+   *   session: async (ctx, next) => {
+   *     ctx.emit({ type: "channel:slack:inbound", payload: { channel: "C1", text: "hi" } })
+   *     await next()
+   *   },
+   * }
+   * ```
+   */
+  events?: EventTypeMap
 
   /**
    * Wraps the agent lifetime. Code before `next()` = init; code after = dispose.

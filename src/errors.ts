@@ -214,3 +214,120 @@ export class StructuredOutputValidationError extends AgentExpressError {
     this.issues = issues
   }
 }
+
+/**
+ * Thrown when `ctx.emit()` is called outside a session context — from an
+ * `agent` hook (which has no `emit` on its context type), or from a deferred
+ * task after `session:end`. Events are session-scoped by design.
+ */
+export class EventOutsideSessionError extends AgentExpressError {
+  constructor(reason: string) {
+    super(
+      `Cannot emit event: ${reason}. Events are session-scoped — emit from session/turn/model/tool hooks only.`,
+      "EVENT_OUTSIDE_SESSION",
+      false,
+    )
+    this.name = "EventOutsideSessionError"
+  }
+}
+
+/**
+ * Thrown at agent construction when two declarations register the same event type.
+ * Either core ↔ middleware collision, or middleware ↔ middleware collision.
+ */
+export class EventTypeCollisionError extends AgentExpressError {
+  /** The event type with the collision. */
+  readonly type: string
+  /** Names of all owners that declared this type (core + middleware names). */
+  readonly owners: readonly string[]
+
+  constructor(type: string, owners: readonly string[]) {
+    super(
+      `Event type "${type}" declared by multiple owners: ${owners.join(", ")}. Each event type must be owned by exactly one middleware (or by core).`,
+      "EVENT_TYPE_COLLISION",
+      false,
+    )
+    this.name = "EventTypeCollisionError"
+    this.type = type
+    this.owners = owners
+  }
+}
+
+/** Thrown at emit time when the payload fails the declared Zod schema. */
+export class EventValidationError extends AgentExpressError {
+  /** The event type whose payload failed validation. */
+  readonly type: string
+  /** Zod issues array (raw — caller can format as needed). */
+  readonly issues: unknown
+
+  constructor(type: string, issues: unknown) {
+    super(`Event payload for "${type}" failed validation. See .issues for details.`, "EVENT_VALIDATION", false)
+    this.name = "EventValidationError"
+    this.type = type
+    this.issues = issues
+  }
+}
+
+/**
+ * Thrown at emit time when the payload passes Zod validation but fails
+ * `JSON.stringify` — `BigInt`, circular reference, function, `Date` instance, etc.
+ * Two-layer defense: schema first, serialization second; framework never silently corrupts the log.
+ */
+export class EventSerializationError extends AgentExpressError {
+  /** The event type whose payload failed serialization. */
+  readonly type: string
+
+  constructor(type: string, cause?: Error) {
+    super(
+      `Event payload for "${type}" failed JSON serialization. Avoid BigInt, circular refs, functions, and Date instances; pre-normalize to JSON primitives.`,
+      "EVENT_SERIALIZATION",
+      false,
+      cause,
+    )
+    this.name = "EventSerializationError"
+    this.type = type
+  }
+}
+
+/** Thrown at emit time when the type isn't in the merged event vocabulary. */
+export class UnknownEventTypeError extends AgentExpressError {
+  /** The unknown event type the caller tried to emit. */
+  readonly type: string
+
+  constructor(type: string) {
+    super(
+      `Unknown event type "${type}". Declare it on a middleware's "events" field and use that middleware on this agent.`,
+      "UNKNOWN_EVENT_TYPE",
+      false,
+    )
+    this.name = "UnknownEventTypeError"
+    this.type = type
+  }
+}
+
+/**
+ * Thrown by the framework when a storage adapter cannot durably write an event
+ * before `turn:end` is acknowledged. The adapter has either thrown itself or
+ * refused the write; the in-memory event log MUST NOT report the event as written.
+ */
+export class EventStoreWriteError extends AgentExpressError {
+  /** The event type that failed to persist. */
+  readonly type: string
+  /** The framework-assigned event ID that did not durably write. */
+  readonly eventId: string
+  /** The session the event belonged to. */
+  readonly sessionId: string
+
+  constructor(sessionId: string, eventId: string, type: string, cause?: Error) {
+    super(
+      `Failed to durably write event "${type}" (id=${eventId}) for session ${sessionId}: ${cause?.message ?? "adapter refused"}`,
+      "EVENT_STORE_WRITE",
+      false,
+      cause,
+    )
+    this.name = "EventStoreWriteError"
+    this.sessionId = sessionId
+    this.eventId = eventId
+    this.type = type
+  }
+}
