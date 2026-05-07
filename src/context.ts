@@ -1,4 +1,4 @@
-import type { Message, EmitInput, ModelResponse, ToolResult, Tool, Event, EventTypeMap } from "./types.js"
+import type { Message, EmitInput, ModelResponse, ToolResult, Tool, Event, EventEnvelope, EventTypeMap } from "./types.js"
 import type {
   AgentContext,
   SessionContext,
@@ -56,9 +56,21 @@ function buildSessionEmit(
     }
     session.eventLog.append(event)
     if (writer) {
+      // ord = the index where this event landed in the log. Stays monotonic
+      // across replay/resume because replay populates earlier indices first.
+      const ord = session.eventLog.events.length - 1
+      const envelope: EventEnvelope = {
+        sessionId: session.id,
+        eventId: event.id,
+        ord,
+        ts: event.ts,
+        type: event.type,
+        schemaVersion: event.schemaVersion,
+        payload: event.payload,
+      }
       // Fire-and-forget queueing — the durable-write Promise is awaited at the
       // turn:end durability boundary via writer.drain(sessionId).
-      void writer.enqueue(session.id, event).catch(() => {
+      void writer.enqueue(envelope).catch(() => {
         // Adapter failures surface via writer.drain() — do not double-throw here.
       })
     }

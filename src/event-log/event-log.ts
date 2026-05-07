@@ -1,19 +1,11 @@
 /**
  * EventLog — the canonical per-session record.
  *
- * Replaces the v0.3 `EventBus` (single-purpose async iterator buffer for
- * streaming) with a unified primitive that:
- *
- * 1. Holds the canonical, append-only `events: Event[]` array (synchronous,
- *    read-your-writes — `Session.events` returns this array).
- * 2. Exposes a single-consumer async iterator (live tail) for `AgentRun`
- *    streaming consumers. Same events surface through both paths.
- * 3. Emits durable-write requests to a `Writer` (queues to
- *    `SessionStore.appendEvent`) — best-effort durability within the
- *    `turn:end` boundary.
- *
- * All three surfaces — `events`, the async iterator, and the durable writer
- * — see exactly the same event objects with the same IDs.
+ * Holds the append-only `events: Event[]` array (synchronous,
+ * read-your-writes — `Session.events` returns this array). Also notifies
+ * subscribers on each append; `AgentRun` and the durable `Writer` both
+ * subscribe so the same `Event` objects (same IDs) flow through streaming
+ * consumers and adapter persistence.
  */
 
 import type { Event } from "../types.js"
@@ -22,18 +14,24 @@ import type { Event } from "../types.js"
 export type EventSubscriber = (event: Event) => void
 
 /**
+ * Symbol attached to a `Middleware` instance to advertise that it provides
+ * a `SessionStore`. The framework reads this at `agent.init()` time to wire
+ * the durable-write `Writer` queue. Use the `memory.store()` middleware —
+ * which sets this property — rather than setting it directly.
+ */
+export const SESSION_STORE_PROVIDER = Symbol.for("agent-express.session-store-provider")
+
+/**
  * Per-session canonical event log.
  *
- * Append synchronous, read-your-writes. Multiple subscribers may observe
- * each appended event; one async iterator consumer per log (designed for
- * the AgentRun consumer pattern — adding more would lose events).
+ * Append synchronous, read-your-writes. Multiple subscribers observe
+ * each appended event; the framework subscribes the streaming `AgentRun`
+ * iterator and (when configured) the durable `Writer` queue.
  */
 export class EventLog {
   private readonly _events: Event[] = []
   private readonly subscribers: EventSubscriber[] = []
-  private resolveWaiter: (() => void) | null = null
   private closed = false
-  private iterCursor = 0
 
   /** Read-only view of all events appended so far. */
   get events(): readonly Event[] {
@@ -46,17 +44,40 @@ export class EventLog {
   }
 
   /**
+   * Replay events from a persisted source (e.g., `SessionStore.load`) into
+   * the in-memory log. Skips events whose IDs are already present so this
+   * is safe to call after partial writes. Used by `memory.store()` middleware
+   * on session start to rehydrate prior history.
+   */
+  replay(events: Iterable<Event>): void {
+    if (this.closed) return
+    const known = new Set(this._events.map((e) => e.id))
+    for (const event of events) {
+      if (known.has(event.id)) continue
+      this._events.push(event)
+      known.add(event.id)
+    }
+  }
+
+  /**
    * Append an event. Synchronous — by the time this returns, the event is
-   * in `events` (FR-012 read-your-writes), all subscribers have been
-   * notified, and any waiting async-iterator consumer is unblocked.
+   * in `events` (read-your-writes), all subscribers have been notified,
+   * and any waiting async-iterator consumer is unblocked.
+   *
+   * Subscriber exceptions are swallowed so a misbehaving subscriber cannot
+   * stall the rest of the framework (other subscribers still fire, the
+   * iterator still wakes). Subscribers that need their errors observed
+   * should handle them internally.
    */
   append(event: Event): void {
     if (this.closed) return
     this._events.push(event)
-    for (const sub of this.subscribers) sub(event)
-    if (this.resolveWaiter) {
-      this.resolveWaiter()
-      this.resolveWaiter = null
+    for (const sub of this.subscribers) {
+      try {
+        sub(event)
+      } catch {
+        // Defensive: a throwing subscriber must not break the log invariants.
+      }
     }
   }
 
@@ -73,39 +94,10 @@ export class EventLog {
   }
 
   /**
-   * Signal that no more events will be emitted. The async iterator drains
-   * the remaining buffer then returns.
+   * Mark the log as closed. Further `append` calls are silently dropped.
+   * Subscribers are not unregistered — that's the caller's responsibility.
    */
   close(): void {
     this.closed = true
-    if (this.resolveWaiter) {
-      this.resolveWaiter()
-      this.resolveWaiter = null
-    }
-  }
-
-  /**
-   * Async iterator for streaming consumers. Yields events in order as they
-   * are appended; awaits when caught up to the tail. Returns when `close()`
-   * has been called and the buffer is fully drained.
-   *
-   * Single-consumer by design (matches the AgentRun streaming pattern).
-   * Multiple iterators on the same log compete for the same cursor and
-   * will each see only a subset of events.
-   */
-  async *[Symbol.asyncIterator](): AsyncIterator<Event> {
-    while (true) {
-      if (this.iterCursor < this._events.length) {
-        const event = this._events[this.iterCursor]!
-        this.iterCursor++
-        yield event
-      } else if (this.closed) {
-        return
-      } else {
-        await new Promise<void>((r) => {
-          this.resolveWaiter = r
-        })
-      }
-    }
   }
 }

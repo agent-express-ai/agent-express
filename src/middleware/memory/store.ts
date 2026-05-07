@@ -1,5 +1,6 @@
 import type { Middleware, SessionContext } from "../../middleware.js"
-import type { SessionStore, SessionData, EventEnvelope } from "../../types.js"
+import type { SessionStore } from "../../types.js"
+import { SESSION_STORE_PROVIDER } from "../../event-log/event-log.js"
 
 /**
  * Configuration for the `memory.store()` middleware.
@@ -14,8 +15,11 @@ export interface MemoryStoreConfig {
 /**
  * Creates a `memory.store()` middleware for session persistence.
  *
- * Loads session on creation, saves after each turn. Falls back to in-memory
- * on backend failure — user-facing functionality is never blocked.
+ * On session start, restores `state` and replays any prior events from the
+ * backend into the session's event log so multi-turn conversations resume
+ * cleanly. Per-event durable writes go through `SessionStore.appendEvent`
+ * automatically — the framework's `Writer` queue picks up the backend
+ * advertised by this middleware via the `SESSION_STORE_PROVIDER` symbol.
  *
  * @param config - SessionStore backend and options
  * @returns Middleware
@@ -33,43 +37,39 @@ export function memoryStore(config: MemoryStoreConfig): Middleware {
 
   return {
     name: "memory:store",
+    [SESSION_STORE_PROVIDER]: backend,
 
     async session(ctx: SessionContext, next: () => Promise<void>): Promise<void> {
-      let backendAvailable = true
-
-      // TODO: replay events into Session.events when SessionContext exposes the event log.
-      // For now, load restores state only; per-event writes go through SessionStore.appendEvent.
+      // Restore state and replay prior events. Per-event durable writes during
+      // the session are handled by the framework's Writer queue (wired up at
+      // agent.init via the SESSION_STORE_PROVIDER symbol on this middleware).
       try {
         const data = await backend.load(ctx.sessionId)
         if (data) {
           for (const [key, value] of Object.entries(data.state)) {
             ctx.state[key] = value
           }
-        }
-      } catch {
-        backendAvailable = false
-      }
-
-      try {
-        await next()
-      } finally {
-        if (backendAvailable) {
-          try {
-            // TODO: source events from Session.events once exposed; per-event persistence
-            // goes through SessionStore.appendEvent during the turn.
-            const events: EventEnvelope[] = []
-            const sessionData: SessionData = {
-              state: { ...ctx.state },
-              events,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            }
-            await backend.save(ctx.sessionId, sessionData)
-          } catch {
-            // Save failed — data stays in-memory only
+          const session = (ctx as SessionContext & { _session?: { eventLog?: { replay?: (events: unknown[]) => void } } })._session
+          const replay = session?.eventLog?.replay
+          if (replay && data.events.length > 0) {
+            replay.call(session.eventLog, data.events.map((e) => ({
+              id: e.eventId,
+              ts: e.ts,
+              type: e.type,
+              schemaVersion: e.schemaVersion,
+              payload: e.payload,
+            })))
           }
         }
+      } catch {
+        // Backend unavailable — fall back to in-memory only.
       }
+
+      await next()
+
+      // No end-of-session save: events are persisted per-emit through the
+      // framework's Writer queue. The state snapshot doesn't need a separate
+      // round-trip — it's recoverable from the events on next load.
     },
-  }
+  } as Middleware
 }

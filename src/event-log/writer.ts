@@ -15,7 +15,7 @@
  * the caller (no silent loss).
  */
 
-import type { Event, EventEnvelope, SessionStore } from "../types.js"
+import type { EventEnvelope, SessionStore } from "../types.js"
 import { EventStoreWriteError } from "../errors.js"
 
 const QUEUE_CAPACITY = 256
@@ -30,8 +30,9 @@ interface SessionQueue {
   buffer: PendingWrite[]
   drainResolvers: Array<() => void>
   drainRejecters: Array<(err: Error) => void>
+  /** Promise resolvers waiting for a free slot when the buffer is at capacity. */
+  slotWaiters: Array<() => void>
   active: boolean
-  ord: number
   /** First fatal error during background drain — kept so future enqueue/drain calls fail fast. */
   failed: Error | null
 }
@@ -49,62 +50,59 @@ export class Writer {
     this.store = store
   }
 
-  /** Build an envelope for a freshly-emitted event and enqueue it for durable write. */
-  enqueue(sessionId: string, event: Event): Promise<void> {
+  /**
+   * Enqueue a fully-formed envelope for durable write. The caller computes
+   * `ord` from the session's event log position (so it stays monotonic
+   * across replay/resume); the writer just persists what it's given.
+   */
+  enqueue(envelope: EventEnvelope): Promise<void> {
+    const sessionId = envelope.sessionId
     let queue = this.queues.get(sessionId)
     if (!queue) {
       queue = {
         buffer: [],
         drainResolvers: [],
         drainRejecters: [],
+        slotWaiters: [],
         active: false,
-        ord: 0,
         failed: null,
       }
       this.queues.set(sessionId, queue)
     }
+    const q = queue
 
-    if (queue.failed) {
-      return Promise.reject(queue.failed)
-    }
-
-    const envelope: EventEnvelope = {
-      sessionId,
-      eventId: event.id,
-      ord: queue.ord++,
-      ts: event.ts,
-      type: event.type,
-      schemaVersion: event.schemaVersion,
-      payload: event.payload,
+    if (q.failed) {
+      return Promise.reject(q.failed)
     }
 
     return new Promise<void>((resolve, reject) => {
       const enqueueOne = (): void => {
-        queue.buffer.push({ envelope, resolve, reject })
-        if (!queue.active) {
-          queue.active = true
-          void this.drainLoop(sessionId, queue)
+        q.buffer.push({ envelope, resolve, reject })
+        if (!q.active) {
+          q.active = true
+          void this.drainLoop(sessionId, q)
         }
       }
 
-      // Backpressure: if full, await a slot.
-      if (queue.buffer.length < QUEUE_CAPACITY) {
+      if (q.buffer.length < QUEUE_CAPACITY) {
         enqueueOne()
-      } else {
-        // Poll for a slot. Cheap because consumer drains aggressively.
-        const wait = (): void => {
-          if (queue.failed) {
-            reject(queue.failed)
-            return
-          }
-          if (queue.buffer.length < QUEUE_CAPACITY) {
-            enqueueOne()
-          } else {
-            setImmediate(wait)
-          }
-        }
-        wait()
+        return
       }
+
+      // Backpressure: signal-driven wait for a free slot. drainLoop wakes us
+      // after each successful write.
+      const onSlotFree = (): void => {
+        if (q.failed) {
+          reject(q.failed)
+          return
+        }
+        if (q.buffer.length < QUEUE_CAPACITY) {
+          enqueueOne()
+        } else {
+          q.slotWaiters.push(onSlotFree)
+        }
+      }
+      q.slotWaiters.push(onSlotFree)
     })
   }
 
@@ -132,6 +130,9 @@ export class Writer {
   private async drainLoop(sessionId: string, queue: SessionQueue): Promise<void> {
     while (queue.buffer.length > 0) {
       const next = queue.buffer.shift()!
+      // Free a slot — wake one waiter (FIFO).
+      const waker = queue.slotWaiters.shift()
+      if (waker) waker()
       try {
         await this.store.appendEvent(sessionId, next.envelope)
         next.resolve()
@@ -144,18 +145,19 @@ export class Writer {
         )
         queue.failed = err
         next.reject(err)
-        // Reject every pending write and every waiting drain.
+        // Reject every pending write, every drain awaiter, and every backpressure waiter.
         for (const w of queue.buffer) w.reject(err)
         queue.buffer.length = 0
         for (const r of queue.drainRejecters) r(err)
         queue.drainResolvers.length = 0
         queue.drainRejecters.length = 0
+        for (const w of queue.slotWaiters) w() // wakes them; they'll observe queue.failed and reject
+        queue.slotWaiters.length = 0
         queue.active = false
         return
       }
     }
     queue.active = false
-    // Wake all drain awaiters
     for (const r of queue.drainResolvers) r()
     queue.drainResolvers.length = 0
     queue.drainRejecters.length = 0

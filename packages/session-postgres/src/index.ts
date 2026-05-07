@@ -42,7 +42,7 @@ export function postgresStore(config?: PostgresStoreConfig): SessionStore {
         );
         CREATE TABLE IF NOT EXISTS agent_events (
           session_id TEXT NOT NULL,
-          event_id UUID NOT NULL,
+          event_id TEXT NOT NULL,
           ord BIGINT NOT NULL,
           ts BIGINT NOT NULL,
           type TEXT NOT NULL,
@@ -126,7 +126,7 @@ export function postgresStore(config?: PostgresStoreConfig): SessionStore {
         for (const e of data.events) {
           await client.query(
             `INSERT INTO agent_events (session_id, event_id, ord, ts, type, schema_ver, payload)
-               VALUES ($1, $2::uuid, $3, $4, $5, $6, $7::jsonb)
+               VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
                ON CONFLICT (session_id, event_id) DO NOTHING`,
             [sessionId, e.eventId, e.ord, e.ts, e.type, e.schemaVersion, JSON.stringify(e.payload)],
           )
@@ -151,7 +151,7 @@ export function postgresStore(config?: PostgresStoreConfig): SessionStore {
       const p = await getPool()
       await p.query(
         `INSERT INTO agent_events (session_id, event_id, ord, ts, type, schema_ver, payload)
-           VALUES ($1, $2::uuid, $3, $4, $5, $6, $7::jsonb)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
            ON CONFLICT (session_id, event_id) DO NOTHING`,
         [
           sessionId,
@@ -171,6 +171,8 @@ export function postgresStore(config?: PostgresStoreConfig): SessionStore {
       opts?: { limit?: number; offset?: number; order?: "asc" | "desc" },
     ): Promise<EventEnvelope[]> {
       const p = await getPool()
+      // ORDER BY ${order} interpolation is safe because `order` is constrained
+      // to "ASC"/"DESC" by the explicit ternary above — never a user-supplied string.
       const order = opts?.order === "desc" ? "DESC" : "ASC"
       const limit = opts?.limit ?? 1000
       const offset = opts?.offset ?? 0

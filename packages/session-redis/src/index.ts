@@ -24,14 +24,13 @@ const APPEND_LUA = `
 local sessionKey = KEYS[1]
 local eventsKey  = KEYS[2]
 local idIndexKey = KEYS[3]
-local counterKey = KEYS[4]
 
 local eventId    = ARGV[1]
-local ts         = tonumber(ARGV[2])
-local typ        = ARGV[3]
-local schemaVer  = tonumber(ARGV[4])
-local payload    = ARGV[5]
-local sessionId  = ARGV[6]
+local ord        = tonumber(ARGV[2])
+local ts         = tonumber(ARGV[3])
+local typ        = ARGV[4]
+local schemaVer  = tonumber(ARGV[5])
+local payload    = ARGV[6]
 local now        = tonumber(ARGV[7])
 local ttl        = tonumber(ARGV[8])
 
@@ -39,7 +38,6 @@ if redis.call('SISMEMBER', idIndexKey, eventId) == 1 then
   return 0
 end
 
-local ord = redis.call('INCR', counterKey) - 1
 local member = cjson.encode({
   eventId = eventId,
   ord = ord,
@@ -64,7 +62,6 @@ if ttl > 0 then
   redis.call('EXPIRE', sessionKey, ttl)
   redis.call('EXPIRE', eventsKey, ttl)
   redis.call('EXPIRE', idIndexKey, ttl)
-  redis.call('EXPIRE', counterKey, ttl)
 end
 
 return 1
@@ -93,14 +90,12 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
   const sessionKey = (id: string) => `${prefix}${id}`
   const eventsKey = (id: string) => `${prefix}${id}:events`
   const idIndexKey = (id: string) => `${prefix}${id}:event-ids`
-  const counterKey = (id: string) => `${prefix}${id}:ord`
 
   function applyTtl(pipeline: { expire: (k: string, t: number) => unknown }, sessionId: string): void {
     if (ttl > 0) {
       pipeline.expire(sessionKey(sessionId), ttl)
       pipeline.expire(eventsKey(sessionId), ttl)
       pipeline.expire(idIndexKey(sessionId), ttl)
-      pipeline.expire(counterKey(sessionId), ttl)
     }
   }
 
@@ -141,7 +136,6 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
       })
       pipeline.del(eventsKey(sessionId))
       pipeline.del(idIndexKey(sessionId))
-      pipeline.set(counterKey(sessionId), data.events.length)
       for (const e of data.events) {
         const member = JSON.stringify({
           eventId: e.eventId,
@@ -160,25 +154,26 @@ export function redisStore(config?: RedisStoreConfig): SessionStore {
 
     async delete(sessionId: string): Promise<void> {
       const r = await getClient()
-      await r.del(sessionKey(sessionId), eventsKey(sessionId), idIndexKey(sessionId), counterKey(sessionId))
+      await r.del(sessionKey(sessionId), eventsKey(sessionId), idIndexKey(sessionId))
     },
 
     async appendEvent(sessionId: string, envelope: EventEnvelope): Promise<void> {
       const r = await getClient()
-      // Idempotent on (sessionId, eventId) via the Lua script.
+      // Idempotent on (sessionId, eventId) via the Lua script. The caller
+      // supplies `ord` (its position in the session's event log) so resume
+      // from a persisted log keeps a single monotonic sequence.
       await r.eval(
         APPEND_LUA,
-        4,
+        3,
         sessionKey(sessionId),
         eventsKey(sessionId),
         idIndexKey(sessionId),
-        counterKey(sessionId),
         envelope.eventId,
+        String(envelope.ord),
         String(envelope.ts),
         envelope.type,
         String(envelope.schemaVersion),
         JSON.stringify(envelope.payload),
-        sessionId,
         String(Date.now()),
         String(ttl),
       )

@@ -68,20 +68,19 @@ vi.mock("ioredis", () => {
       }
     }
     async eval(_script: string, _numKeys: number, ...args: string[]): Promise<number> {
-      const [sessionKey, eventsKey, idIndexKey, counterKey, eventId, ts, typ, schemaVer, payload, sessionId, now] = args
+      const [sessionKey, eventsKey, idIndexKey, eventId, ord, ts, typ, schemaVer, payload, now] = args
       const idSet = this.getSet(idIndexKey)
       if (idSet.has(eventId)) return 0
-      const ord = (this.kv.get(counterKey) as string | undefined) ? Number(this.kv.get(counterKey)) : 0
-      this.kv.set(counterKey, String(ord + 1))
+      const ordNum = Number(ord)
       const member = JSON.stringify({
         eventId,
-        ord,
+        ord: ordNum,
         ts: Number(ts),
         type: typ,
         schemaVersion: Number(schemaVer),
         payload: JSON.parse(payload),
       })
-      this.getZset(eventsKey).set(ord, member)
+      this.getZset(eventsKey).set(ordNum, member)
       idSet.add(eventId)
       const sessionMap = this.getMap(sessionKey)
       if (sessionMap.size === 0) {
@@ -89,8 +88,6 @@ vi.mock("ioredis", () => {
         sessionMap.set("created_at", now)
       }
       sessionMap.set("updated_at", now)
-      // sessionId arg silences unused-var concerns (used implicitly above)
-      void sessionId
       return 1
     }
   }

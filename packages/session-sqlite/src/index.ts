@@ -173,6 +173,8 @@ export function sqliteStore(config?: SqliteStoreConfig): SessionStore {
       opts?: { limit?: number; offset?: number; order?: "asc" | "desc" },
     ): Promise<EventEnvelope[]> {
       const d = getDb()
+      // ORDER BY ${order} interpolation is safe — `order` is constrained
+      // to "ASC"/"DESC" by the explicit ternary, never a user-supplied string.
       const order = opts?.order === "desc" ? "DESC" : "ASC"
       const limit = opts?.limit ?? 1000
       const offset = opts?.offset ?? 0

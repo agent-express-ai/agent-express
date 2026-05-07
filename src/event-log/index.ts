@@ -11,7 +11,7 @@
  * - Core event-type map tables: emitted, reserved-emitted, reserved-only.
  */
 
-export { EventLog } from "./event-log.js"
+export { EventLog, SESSION_STORE_PROVIDER } from "./event-log.js"
 export type { EventSubscriber } from "./event-log.js"
 export { Writer } from "./writer.js"
 export { nextEventId } from "./id.js"

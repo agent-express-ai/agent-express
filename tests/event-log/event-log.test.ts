@@ -41,27 +41,26 @@ describe("event-log: EventLog", () => {
     expect(seen).toEqual(["user:input", "b:user:input"])
   })
 
-  it("yields events through async iterator (live tail)", async () => {
+  it("a throwing subscriber does not stop other subscribers or break the log", () => {
     const log = new EventLog()
-    const e1: Event = { id: nextEventId(), ts: 1, type: "user:input", schemaVersion: 1, payload: { text: "a" } }
-    const e2: Event = { id: nextEventId(), ts: 2, type: "user:input", schemaVersion: 1, payload: { text: "b" } }
-
-    log.append(e1)
-    const iter = log[Symbol.asyncIterator]()
-    const first = await iter.next()
-    expect(first.done).toBe(false)
-    expect((first.value as Event).payload).toEqual({ text: "a" })
-
-    // Append while consumer is awaiting next
-    setImmediate(() => {
-      log.append(e2)
-      log.close()
+    const seen: string[] = []
+    log.subscribe(() => {
+      throw new Error("first subscriber boom")
     })
+    log.subscribe((e) => seen.push(e.type))
+    log.append({ id: nextEventId(), ts: 1, type: "user:input", schemaVersion: 1, payload: { text: "x" } })
+    expect(seen).toEqual(["user:input"])
+    expect(log.events).toHaveLength(1)
+  })
 
-    const second = await iter.next()
-    expect((second.value as Event).payload).toEqual({ text: "b" })
-    const third = await iter.next()
-    expect(third.done).toBe(true)
+  it("unsubscribe stops further notifications", () => {
+    const log = new EventLog()
+    const seen: string[] = []
+    const unsub = log.subscribe((e) => seen.push(e.type))
+    log.append({ id: nextEventId(), ts: 1, type: "user:input", schemaVersion: 1, payload: { text: "a" } })
+    unsub()
+    log.append({ id: nextEventId(), ts: 2, type: "user:input", schemaVersion: 1, payload: { text: "b" } })
+    expect(seen).toEqual(["user:input"])
   })
 
   it("drops appends after close()", () => {
@@ -70,6 +69,16 @@ describe("event-log: EventLog", () => {
     log.close()
     log.append({ id: nextEventId(), ts: 2, type: "user:input", schemaVersion: 1, payload: { text: "b" } })
     expect(log.events).toHaveLength(1)
+    expect(log.isClosed).toBe(true)
+  })
+
+  it("replay merges persisted events idempotently (skips known IDs)", () => {
+    const log = new EventLog()
+    const a: Event = { id: nextEventId(), ts: 1, type: "user:input", schemaVersion: 1, payload: { text: "a" } }
+    const b: Event = { id: nextEventId(), ts: 2, type: "user:input", schemaVersion: 1, payload: { text: "b" } }
+    log.append(a)
+    log.replay([a, b]) // a already known, b is new
+    expect(log.events.map((e) => e.id)).toEqual([a.id, b.id])
   })
 })
 

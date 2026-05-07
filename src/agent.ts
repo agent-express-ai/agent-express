@@ -14,7 +14,7 @@ import { Session } from "./session.js"
 import type { SessionInternals } from "./session.js"
 import { mergeEventTypeMaps } from "./event-log/validate.js"
 import { Writer } from "./event-log/writer.js"
-import { EventLog } from "./event-log/event-log.js"
+import { EventLog, SESSION_STORE_PROVIDER } from "./event-log/event-log.js"
 import { defaults } from "./defaults.js"
 
 /** Symbol.asyncDispose polyfill for Node.js 20 */
@@ -274,11 +274,11 @@ export class Agent {
   }
 
   private findSessionStore(): SessionStore | null {
-    // Walk middleware looking for one that exposed a SessionStore as config.
-    // memory.store() middleware stores its backend on a known property; for
-    // now we accept any middleware that exposes a `__sessionStore` field.
+    // Walk middleware for one that advertises a SessionStore via the
+    // SESSION_STORE_PROVIDER symbol (set by `memory.store()` and any other
+    // middleware that wants to provide durable persistence). First match wins.
     for (const mw of this.middlewares) {
-      const candidate = (mw as { __sessionStore?: SessionStore }).__sessionStore
+      const candidate = (mw as { [SESSION_STORE_PROVIDER]?: SessionStore })[SESSION_STORE_PROVIDER]
       if (candidate) return candidate
     }
     return null

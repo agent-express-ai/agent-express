@@ -171,6 +171,7 @@ export class Session {
     }
 
     this.store.complete()
+    this.internals.writer?.forget(this.id)
     this.internals.onClose(this)
   }
 
