@@ -24,24 +24,20 @@ existing stack.
 
 ## 1. Six middleware, two layers
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  In-memory layer — read via session.state                         │
-│                                                                   │
-│  observe.usage()        → state["observe:usage"]    token totals │
-│  observe.tools()        → state["observe:tools"]    tool calls   │
-│  observe.duration()     → state["observe:duration"] turn timings │
-└──────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────┐
-│  Export layer — emits to external observability systems           │
-│                                                                   │
-│  observe.log()          → JSON lines to stderr / custom sink     │
-│  observe.metrics()      → OpenTelemetry Meter API → Prometheus / │
-│                            OTLP / standalone callback             │
-│  observe.traces()       → OpenTelemetry Tracer API → Jaeger /    │
-│                            Honeycomb / OTLP / standalone callback │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph L1["In-memory layer &mdash; read via session.state"]
+        direction LR
+        U["observe.usage()<br/>state['observe:usage']<br/>token totals"]
+        T["observe.tools()<br/>state['observe:tools']<br/>tool calls"]
+        D["observe.duration()<br/>state['observe:duration']<br/>turn timings"]
+    end
+    subgraph L2["Export layer &mdash; emits to external observability systems"]
+        direction LR
+        LOG["observe.log()<br/>JSON lines<br/>stderr / custom sink"]
+        MET["observe.metrics()<br/>OpenTelemetry Meter API<br/>Prometheus / OTLP / callback"]
+        TR["observe.traces()<br/>OpenTelemetry Tracer API<br/>Jaeger / Honeycomb / OTLP / callback"]
+    end
 ```
 
 Layer 1 writes to `session.state` so any code (other middleware,

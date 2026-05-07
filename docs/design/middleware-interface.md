@@ -44,36 +44,25 @@ One `Middleware` interface with optional lifecycle hooks. Each runtime hook foll
 
 The agent runtime has six distinct nesting levels. Two are simple hooks (agent lifecycle), four are decorator/onion (runtime execution):
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  AGENT (long-lived, one instance serves many conversations)   │
-│  init / dispose                                               │
-│                                                               │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  SESSION (per conversation / thread)                    │  │
-│  │  - user identity, restored state, allocated resources   │  │
-│  │                                                         │  │
-│  │  ┌──────────────────────────────────────────────────┐  │  │
-│  │  │  TURN (per user message → assistant response)     │  │  │
-│  │  │                                                    │  │  │
-│  │  │  ┌──────────────────────────────────────────┐     │  │  │
-│  │  │  │  MODEL (one LLM call)                     │     │  │  │
-│  │  │  │  - messages, model selection, tool schemas │     │  │  │
-│  │  │  └──────────────────────────────────────────┘     │  │  │
-│  │  │                                                    │  │  │
-│  │  │  ┌──────────────────────────────────────────┐     │  │  │
-│  │  │  │  TOOL (one tool execution)                │     │  │  │
-│  │  │  │  - tool name, args, approval              │     │  │  │
-│  │  │  └──────────────────────────────────────────┘     │  │  │
-│  │  │                                                    │  │  │
-│  │  │  MODEL → TOOL → MODEL → TOOL → ... → final text  │  │  │
-│  │  └──────────────────────────────────────────────────┘  │  │
-│  │                                                         │  │
-│  │  TURN → TURN → TURN → ... (multi-turn conversation)    │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  SESSION → SESSION → SESSION → ... (many conversations)       │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph A["AGENT &mdash; long-lived; one instance serves many conversations<br/>init / dispose"]
+        direction TB
+        subgraph S["SESSION &mdash; per conversation / thread<br/>user identity · restored state · allocated resources"]
+            direction TB
+            subgraph T["TURN &mdash; per user message → assistant response"]
+                direction TB
+                M["MODEL &mdash; one LLM call<br/>messages · model selection · tool schemas"]
+                TL["TOOL &mdash; one tool execution<br/>tool name · args · approval"]
+                LOOP["MODEL → TOOL → MODEL → TOOL → ... → final text"]
+                M --- TL --- LOOP
+            end
+            TLOOP["TURN → TURN → TURN → ... (multi-turn conversation)"]
+            T --- TLOOP
+        end
+        SLOOP["SESSION → SESSION → SESSION → ... (many conversations)"]
+        S --- SLOOP
+    end
 ```
 
 ### Why these six levels?

@@ -29,39 +29,28 @@ tool calls). Two of the hooks (`agent`, `session`) are wrapper-shaped —
 init/dispose semantics. The other three (`turn`, `model`, `tool`) follow
 the `(ctx, next)` onion pattern around exactly one execution.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  AGENT (long-lived; one Agent instance serves many conversations)    │
-│  agent.init() ──── agent hook before-next                            │
-│                                                                       │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  SESSION (per conversation; many turns)                         │ │
-│  │  agent.session() ──── session hook before-next                  │ │
-│  │                                                                  │ │
-│  │  ┌──────────────────────────────────────────────────────────┐  │ │
-│  │  │  TURN (per user input → final assistant text)             │  │ │
-│  │  │  session.run("...") ──── turn hook before-next            │  │ │
-│  │  │                                                            │  │ │
-│  │  │  ┌────────────────────────────────────────────────────┐  │  │ │
-│  │  │  │  MODEL CALL (one LLM round-trip)                    │  │  │ │
-│  │  │  │  callModel ──── model hook (full onion)             │  │  │ │
-│  │  │  │  may repeat 0..N times within a turn                │  │  │ │
-│  │  │  └────────────────────────────────────────────────────┘  │  │ │
-│  │  │                                                            │  │ │
-│  │  │  ┌────────────────────────────────────────────────────┐  │  │ │
-│  │  │  │  TOOL CALL (one tool invocation)                    │  │  │ │
-│  │  │  │  callTool ──── tool hook (full onion)               │  │  │ │
-│  │  │  │  may run 0..N times in parallel within a model step │  │  │ │
-│  │  │  └────────────────────────────────────────────────────┘  │  │ │
-│  │  │                                                            │  │ │
-│  │  │  turn ends ──── turn hook after-next                      │  │ │
-│  │  └──────────────────────────────────────────────────────────┘  │ │
-│  │                                                                  │ │
-│  │  session.close() ──── session hook after-next                   │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                       │
-│  agent.dispose() ──── agent hook after-next                          │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph A["AGENT &mdash; long-lived; one Agent serves many conversations"]
+        direction TB
+        A1["agent.init()<br/>agent hook before-next"]
+        subgraph S["SESSION &mdash; per conversation; many turns"]
+            direction TB
+            S1["agent.session()<br/>session hook before-next"]
+            subgraph T["TURN &mdash; per user input → final assistant text"]
+                direction TB
+                T1["session.run('...')<br/>turn hook before-next"]
+                M["MODEL CALL &mdash; one LLM round-trip<br/>callModel · model hook (full onion)<br/>repeats 0..N times within a turn"]
+                TL["TOOL CALL &mdash; one tool invocation<br/>callTool · tool hook (full onion)<br/>runs 0..N times in parallel within a model step"]
+                T2["turn ends<br/>turn hook after-next"]
+                T1 --> M --> TL --> T2
+            end
+            S2["session.close()<br/>session hook after-next"]
+            S1 --> T --> S2
+        end
+        A2["agent.dispose()<br/>agent hook after-next"]
+        A1 --> S --> A2
+    end
 ```
 
 A single middleware can implement any subset of the five hooks; it doesn't
@@ -182,57 +171,23 @@ in [`src/loop.ts`](../../src/loop.ts) runs `model → check response →
 execute tools → repeat` until the model returns a final text response (no
 tool calls).
 
-```
-                          ┌───────────────────────────────────┐
-                          │  turn hook before-next            │
-                          │  (compose all `turn` middleware)  │
-                          └─────────────────┬─────────────────┘
-                                            │
-                                            ▼
-                          ┌───────────────────────────────────┐
-                          │  emit "user:input" event          │
-                          └─────────────────┬─────────────────┘
-                                            │
-                ┌───────────────────────────┴─────────────────┐
-                │                  agent loop                  │
-                │  for callIndex=0..ABSOLUTE_MAX (1000):       │
-                │                                              │
-                │   ┌─────────────────────────────────────┐    │
-                │   │  emit "model:start"                  │    │
-                │   │  composed model onion (model hook)   │◄───┼── model middleware
-                │   │   └── callModel (LLM API)            │    │   wraps each call
-                │   │  emit "model:end"                    │    │
-                │   └────────────────┬────────────────────┘    │
-                │                    │                         │
-                │   response.toolCalls.length === 0?           │
-                │                    │                         │
-                │              YES ──┴── NO                    │
-                │              │        │                      │
-                │              ▼        ▼                      │
-                │    [exit loop]   ┌─────────────────────┐     │
-                │                  │ for each tool call: │     │
-                │                  │  emit "tool:call"   │     │
-                │                  │  composed tool      │◄────┼── tool middleware
-                │                  │  onion (tool hook)  │     │   wraps each call
-                │                  │   └── tool.execute  │     │   (Promise.all = parallel)
-                │                  │  emit "tool:result" │     │
-                │                  └─────────────────────┘     │
-                │                                              │
-                │  feed results into messages → next iteration │
-                └──────────────────────────────────────────────┘
-                                            │
-                                            ▼
-                          ┌───────────────────────────────────┐
-                          │  emit "model:response" (rolled-up)│
-                          │  emit "turn:end" with status      │
-                          │  drain Writer queue (durability)  │
-                          └─────────────────┬─────────────────┘
-                                            │
-                                            ▼
-                          ┌───────────────────────────────────┐
-                          │  turn hook after-next             │
-                          │  AgentRun.complete(result)        │
-                          └───────────────────────────────────┘
+```mermaid
+flowchart TB
+    A["turn hook before-next<br/>(compose all turn middleware)"]
+    B["emit user:input"]
+    subgraph LOOP["agent loop &mdash; for callIndex 0..ABSOLUTE_MAX (1000)"]
+        direction TB
+        M["emit model:start<br/>composed model onion (model hook)<br/>↳ callModel (LLM API)<br/>emit model:end"]
+        C{"response.toolCalls<br/>length === 0?"}
+        TLOOP["for each tool call<br/>emit tool:call<br/>composed tool onion (tool hook)<br/>↳ tool.execute (Promise.all = parallel)<br/>emit tool:result"]
+        FEED["feed results into messages<br/>→ next iteration"]
+        M --> C
+        C -- NO --> TLOOP --> FEED --> M
+    end
+    EXIT["emit model:response (rolled-up)<br/>emit turn:end with status<br/>drain Writer queue (durability)"]
+    AFTER["turn hook after-next<br/>AgentRun.complete(result)"]
+    A --> B --> M
+    C -- YES --> EXIT --> AFTER
 ```
 
 The loop is intentionally minimal. It runs the model, checks if the
@@ -255,24 +210,13 @@ the actual call (LLM round-trip or tool execution).
 
 ### 4.1 Model onion
 
-```
-runAgentLoop iteration
-   │
-   │ build modelCtx (messages, model, toolDefs, callIndex)
-   │
-   ▼
-modelOnion(modelCtx)
-   │
-   │ // for each `model` middleware (registration order):
-   │ //   before-next: read/modify ctx (messages, model, toolDefs)
-   │ //   await next() ───┐
-   │                      │ // recurse into next middleware...
-   │                      │ // until innermost: callModel(ctx) → LLM API
-   │                      │
-   │ //   after-next: read/transform response ◄┘
-   │
-   ▼
-ModelResponse { text, toolCalls, finishReason, usage }
+```mermaid
+flowchart TB
+    A["runAgentLoop iteration"]
+    B["build modelCtx<br/>(messages, model, toolDefs, callIndex)"]
+    C["modelOnion(modelCtx)<br/><br/>for each model middleware (registration order):<br/>&nbsp;&nbsp;before-next: read/modify ctx<br/>&nbsp;&nbsp;await next() ─ recurse into next middleware<br/>&nbsp;&nbsp;&nbsp;&nbsp;↳ innermost: callModel(ctx) → LLM API<br/>&nbsp;&nbsp;after-next: read/transform response"]
+    D["ModelResponse<br/>{ text, toolCalls, finishReason, usage }"]
+    A --> B --> C --> D
 ```
 
 What `model` middleware can do:
@@ -290,27 +234,13 @@ What `model` middleware can do:
 
 ### 4.2 Tool onion
 
-```
-for each toolCall in response.toolCalls:
-   │
-   │ build toolCtx (tool, args, callId, callIndex)
-   │
-   ▼ (in parallel via Promise.all)
-toolOnion(toolCtx)
-   │
-   │ // for each `tool` middleware (registration order):
-   │ //   before-next:
-   │ //     - inspect args (modifyArgs / deny / skipCall available)
-   │ //     - approval check, PII restore, validation
-   │ //   await next() ───┐
-   │                      │ // recurse into next middleware...
-   │                      │ // until innermost: tool.execute(args, ctx)
-   │                      │
-   │ //   after-next:     ◄┘
-   │ //     - read/transform result, redact, log
-   │
-   ▼
-ToolResult { callId, result, isError? }
+```mermaid
+flowchart TB
+    A["for each toolCall in response.toolCalls"]
+    B["build toolCtx (tool, args, callId, callIndex)<br/>in parallel via Promise.all"]
+    C["toolOnion(toolCtx)<br/><br/>for each tool middleware (registration order):<br/>&nbsp;&nbsp;before-next:<br/>&nbsp;&nbsp;&nbsp;&nbsp;inspect args (modifyArgs / deny / skipCall)<br/>&nbsp;&nbsp;&nbsp;&nbsp;approval check, PII restore, validation<br/>&nbsp;&nbsp;await next() ─ recurse into next middleware<br/>&nbsp;&nbsp;&nbsp;&nbsp;↳ innermost: tool.execute(args, ctx)<br/>&nbsp;&nbsp;after-next:<br/>&nbsp;&nbsp;&nbsp;&nbsp;read/transform result, redact, log"]
+    D["ToolResult { callId, result, isError? }"]
+    A --> B --> C --> D
 ```
 
 What `tool` middleware can do:

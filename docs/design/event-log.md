@@ -35,34 +35,20 @@ Single primitive, three surfaces — same objects through all of them.
 
 ## 2. Architecture at a Glance
 
-```
-                                            ┌───────────────────┐
-                          subscribe(ev)     │   AgentRun        │
-                       ┌──────────────────► │  (per turn)       │
-                       │                    │  iterates over    │
-                       │                    │  Event[] from     │
-                       │                    │  cursor onward    │
-┌──────────────┐       │   ┌──────────────┐ └───────────────────┘
-│  ctx.emit    │       │   │  EventLog    │
-│ ({type,      │ ────► │ ─►│   events[]   │            ┌─────────────────┐
-│   payload})  │       │   │   subscribe  │   subscribe │   Writer        │
-└──────────────┘       │   └──────────────┘ ──────────► │  per-session    │
-       │               │                                │  bounded queue  │
-       │ validateEmit  │                                │  (256)          │
-       ▼               │                                └────────┬────────┘
-┌──────────────┐       │                                         │
-│ Zod safeParse│       │                                         │ appendEvent
-│ + JSON guard │       │                                         ▼
-└──────────────┘       │                                ┌─────────────────┐
-       │               │                                │  SessionStore   │
-       │ ok            │                                │   adapter       │
-       ▼               │                                │  (sqlite/redis/ │
-┌──────────────┐       │                                │   postgres)     │
-│  build Event │       │                                └─────────────────┘
-│  id=UUIDv7   │ ──────┘
-│  ts=Date.now │
-│  schemaVer   │
-└──────────────┘
+```mermaid
+flowchart LR
+    EMIT["ctx.emit&nbsp;{type,&nbsp;payload}"]
+    VAL["validateEmit<br/>(Zod + JSON guard)"]
+    BUILD["build Event<br/>id = UUIDv7<br/>ts = Date.now<br/>schemaVersion"]
+    LOG[("EventLog<br/>events[]<br/>+ subscribers")]
+    RUN["AgentRun iterator<br/>(per turn)<br/>yields Event[] from<br/>cursor onward"]
+    WRITER["Writer<br/>per-session<br/>bounded queue (256)"]
+    STORE[("SessionStore<br/>adapter<br/>sqlite / redis / postgres")]
+
+    EMIT --> VAL --> BUILD --> LOG
+    LOG -. subscribe .-> RUN
+    LOG -. subscribe .-> WRITER
+    WRITER -- appendEvent --> STORE
 ```
 
 `ctx.emit` is the single public entry point. After validation, the event
@@ -423,57 +409,61 @@ The framework provides the wiring; the user just `agent.use(memory.store({ backe
 
 ## 11. Lifecycle: Multi-Turn Session with Persistence
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Agent
+    participant Session
+    participant EventLog
+    participant Writer
+    participant Store as SessionStore<br/>(sqlite)
+
+    Note over Agent: agent.init()
+    Agent->>Agent: mergeEventTypeMaps()
+    Agent->>Writer: new Writer(sqliteStore)
+
+    User->>Agent: agent.session({id:"s1"})
+    Agent->>Session: new Session
+    Session->>EventLog: new EventLog
+    Session->>Store: backend.load("s1")
+    Store-->>Session: null (first time, no replay)
+
+    User->>Session: session.run("hello")
+    Session->>EventLog: new AgentRun (cursor=0, subscribe)
+
+    Session->>EventLog: emit turn:start
+    EventLog->>Writer: enqueue
+    Writer->>Store: appendEvent (async)
+
+    Session->>EventLog: emit user:input
+    EventLog->>Writer: enqueue
+    Writer->>Store: appendEvent (async)
+
+    Note over Session: ... model call ...
+    Session->>EventLog: emit model:start
+    Session->>EventLog: emit model:end
+    Session->>EventLog: emit model:response
+    Session->>EventLog: emit turn:end {status:"completed"}
+
+    EventLog->>Writer: enqueue (each)
+    Writer->>Store: appendEvent (each)
+
+    Session->>Writer: drain("s1")
+    Note right of Writer: blocks until queue empty<br/>— durability boundary
+    Writer-->>Session: drained
+
+    Session-->>User: AgentRun.result
+
+    User->>Session: session.close()
+    Session->>EventLog: close()
+    Session->>Writer: forget("s1")
+    Note right of Writer: per-session queue freed
 ```
-                                        EventLog        SessionStore (sqlite)
-agent.init()            mergeEventTypeMaps()
-                        Writer = new Writer(sqliteStore)
 
-agent.session({id:"s1"})
-                        new Session
-                          new SessionState
-                            new EventLog ─────┐
-                                              │
-                        memoryStore.session()
-                          await backend.load("s1")
-                          (first time → returns null, no replay)
-
-session.run("hello")
-                        new AgentRun(eventLog)
-                          cursor = 0
-                          subscribe(...)         ────► AgentRun's subscriber
-
-  ctx.emit("turn:start", {turnIndex:0,...}) ──► append(event[0])  ────► Writer.enqueue
-                                                                           │
-                                                                           ├─► async appendEvent (sqlite INSERT)
-  ctx.emit("user:input", {text:"hello"}) ───► append(event[1])  ────► Writer.enqueue
-                                                                           │
-                                                                           ├─► async appendEvent
-  ... model call ...
-  ctx.emit("model:start", {...}) ────────────► append(event[2])
-  ctx.emit("model:end", {...})  ────────────► append(event[3])
-  ctx.emit("model:response", {...}) ────────► append(event[4])
-  ctx.emit("turn:end", {status:"completed"}) ► append(event[5])
-                                                                           │
-                        await writer.drain("s1") ◄───────────────────────┘
-                          (blocks until queue empty — durability boundary)
-
-                        agentRun.complete(result)
-                          stopAt = 6
-                          stopped = true
-
-                                                                           ▼
-                                                                  events table:
-                                                                  [s1, e1, ord=0, turn:start]
-                                                                  [s1, e2, ord=1, user:input]
-                                                                  [s1, e3, ord=2, model:start]
-                                                                  [s1, e4, ord=3, model:end]
-                                                                  [s1, e5, ord=4, model:response]
-                                                                  [s1, e6, ord=5, turn:end]
-
-session.close()
-                        eventLog.close()
-                        writer.forget("s1")     ◄── per-session queue freed
-```
+After this turn the `events` table holds six rows for `s1`, ordered by
+`ord` 0..5: `turn:start`, `user:input`, `model:start`, `model:end`,
+`model:response`, `turn:end`.
 
 For a **second turn on the same session id** (resume), `memoryStore.session()`
 calls `backend.load("s1")` and gets back all 6 events. `eventLog.replay(events)`
