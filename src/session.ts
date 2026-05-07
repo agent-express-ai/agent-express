@@ -52,6 +52,25 @@ export interface SessionInternals {
  * await session.close()
  * ```
  */
+/**
+ * Best-effort string serialization of an unknown `Error.cause` chain link.
+ * Returns `undefined` when there is no cause or when no safe representation
+ * exists (e.g., a plain object whose `toString` would yield "[object Object]").
+ */
+function stringifyCause(cause: unknown): string | undefined {
+  if (cause === undefined || cause === null) return undefined
+  if (cause instanceof Error) return cause.message
+  if (typeof cause === "string") return cause
+  if (typeof cause === "number" || typeof cause === "boolean" || typeof cause === "bigint") {
+    return String(cause)
+  }
+  try {
+    return JSON.stringify(cause)
+  } catch {
+    return undefined
+  }
+}
+
 export class Session {
   /** Unique session identifier. */
   readonly id: string
@@ -257,15 +276,14 @@ export class Session {
       // `AbortError`, so we don't double-record those.
       if (!isAbort) {
         const cause = (caughtError as Error & { cause?: unknown }).cause
+        const causeStr = stringifyCause(cause)
         turnCtx.emit({
           type: "error",
           payload: {
             scope: "turn",
             kind: caughtError.name || "Error",
             message: caughtError.message,
-            ...(cause !== undefined && {
-              cause: cause instanceof Error ? cause.message : String(cause),
-            }),
+            ...(causeStr !== undefined && { cause: causeStr }),
           },
         })
       }
