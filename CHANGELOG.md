@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Middleware.events` field — middleware authors declare event-type schemas (Zod) parallel to the existing `state` field. Schemas merge at agent construction; collisions throw `EventTypeCollisionError`.
 - Core event vocabulary with Zod-validated payloads: `user:input`, `model:start/chunk/end/response`, `tool:call/result`, `turn:start`, `turn:end` (with three-way `status: "completed" | "interrupted" | "failed"` enum), `error`. Plus reserved-emitted `tool:progress` and reserved-only types for upcoming features (`compaction:applied`, `agent:handoff/delegate`, `permission:approved/denied/modified`, `turn:diff`, `turn:plan`, `model:reasoning:chunk/end`).
 - `typedEvents(events, schema, type)` helper for narrowing reads to a specific event type.
+- `expectEventTypes(events, types)`, `expectEventPayload(events, type)`, `countEvents(events, type)` test helpers in `agent-express/test`.
+- `SESSION_STORE_PROVIDER` symbol — middlewares advertise a `SessionStore` to the framework via this symbol; `memory.store(...)` sets it automatically.
+- `EventLog.replay(events)` — idempotent rehydration helper used by `memory.store(...)` to replay prior events into a session on resume.
 - New error classes: `EventOutsideSessionError`, `EventTypeCollisionError`, `EventValidationError`, `EventSerializationError`, `UnknownEventTypeError`, `EventStoreWriteError`.
 
 ### Changed

@@ -6,7 +6,7 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 ## Quick Reference
 
 - **Build**: `npm run build` (tsup → dist/)
-- **Test**: `npm test` (vitest, 619 tests, 75 files)
+- **Test**: `npm test` (vitest, 629 tests, 76 files)
 - **Test with coverage**: `npm run test:coverage` (vitest + @vitest/coverage-v8)
 - **Typecheck**: `npm run typecheck` (tsc --noEmit)
 - **Lint**: `npx eslint .`
@@ -14,6 +14,8 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 ## Architecture
 
 **Core:** Minimal agent loop (model→tool→model cycle only). `Agent` class with `.use()` chainable middleware, explicit `init()`/`dispose()` lifecycle, first-class `Session` for multi-turn, `.run()` convenience shorthand. Single `Middleware` interface with 5 onion hooks: `agent`, `session`, `turn`, `model`, `tool` — all with the same `(ctx, next)` pattern.
+
+**Event log (v0.4):** `Session.events` is the canonical append-only typed event log per session; `Session.history` is a derived `Message[]` view. `ctx.emit({ type, payload })` validates the type+payload against a merged Zod event-type map (core schemas + `Middleware.events` declarations), generates UUIDv7 + ts + schemaVersion, appends in-memory (read-your-writes), and queues durable writes to the configured `SessionStore.appendEvent`. Same `Event` objects (same ids) flow through `session.events`, the `for await ... of agentRun` iterator, and the storage adapter. `memory.store(...)` middleware advertises its backend via the `SESSION_STORE_PROVIDER` symbol; the framework picks it up at `agent.init()`. `turn:end.status` distinguishes `completed` / `interrupted` / `failed`.
 
 **Defaults:** Sensible middleware auto-applied via `defaults()` (retry, usage, tools, duration, maxIterations). Opt-out with `defaults: false`.
 
@@ -100,8 +102,12 @@ agent-express/test  → testAgent() declarative test helper
 - `Source` — citation metadata (`title?`, `url?`, `section?`), used by `Chunk.source`
 - `Chunk` — retrieved document fragment (`text`, `score?`, `source?: Source`)
 - `SearchResult` — web search result (`title`, `url`, `snippet`), independent from Source
-- `SessionStore` — public interface for persistence adapters (`load`, `save`, `delete`, `add`, `list`)
-- `SessionData` — persisted session (`state`, `history`, `createdAt: number`, `updatedAt: number` — epoch ms)
+- `Event<TType, TPayload>` — typed entry in the event log (`id` UUIDv7, `ts`, `type`, `schemaVersion`, `payload`)
+- `EventEnvelope` — on-the-wire shape stored by adapters (adds `sessionId`, `eventId`, `ord` for storage ordering)
+- `EventTypeSchema<T>` — declaration of one event type: Zod schema + version
+- `EventTypeMap` — record of name → `EventTypeSchema`; declared on `Middleware.events`, merged at agent init
+- `SessionStore` — public interface for persistence adapters (`load`, `save`, `delete`, `appendEvent`, `listEvents`)
+- `SessionData` — persisted session (`state`, `events: EventEnvelope[]`, `createdAt`, `updatedAt`)
 - `PiiMapping` — redaction mapping (`placeholder`, `original`, `type: PiiType | string`)
 - `PiiType` — built-in PII types: `"email" | "phone" | "creditCard" | "ssn" | "ip"`
 
@@ -110,18 +116,26 @@ agent-express/test  → testAgent() declarative test helper
 ```
 src/
 ├── agent.ts              # Agent class: init(), session(), run(), dispose(), use()
-├── session.ts            # Session class: run(), close(), history, state
-├── session-store.ts      # SessionState (internal): runtime state, history, lifecycle
-├── context.ts            # Context factory functions
+├── session.ts            # Session class: run(), close(), events, history (derived), state
+├── session-store.ts      # SessionState (internal): runtime EventLog + state + lifecycle
+├── context.ts            # Context factory functions; emit closure with validation + writer queueing
 ├── defaults.ts           # defaults() function — standard middleware preset
-├── middleware.ts          # Middleware interface, 5 context types, hook types
-├── types.ts              # Source, Chunk, SearchResult, SessionStore, PiiMapping, etc.
+├── middleware.ts          # Middleware interface, 5 context types, hook types, events field
+├── types.ts              # Event, EventEnvelope, EventTypeSchema, EventTypeMap, SessionStore, etc.
 ├── executor.ts           # composeHooks() onion executor
-├── loop.ts               # Minimal agent loop: model → tool → model cycle
-├── run.ts                # AgentRun: AsyncIterable<StreamEvent> + .result Promise
+├── loop.ts               # Minimal agent loop: model → tool → model cycle (emits typed events)
+├── run.ts                # AgentRun: AsyncIterable<Event> + .result Promise
 ├── state.ts              # SessionState with Proxy-based reducers
-├── events.ts             # EventBus async iterator
-├── errors.ts             # Error classes (Abort, Model, Session, Tool errors)
+├── event-log/
+│   ├── event-log.ts      # EventLog class + SESSION_STORE_PROVIDER symbol
+│   ├── events.ts         # CORE_EVENT_TYPE_MAP — emitted, reserved-emitted, reserved-only
+│   ├── id.ts             # nextEventId() — UUIDv7 wrapper
+│   ├── validate.ts       # mergeEventTypeMaps + validateEmit (Zod + JSON-replacer guard)
+│   ├── derive-history.ts # Pure projection: events[] → Message[] for Session.history
+│   ├── writer.ts         # Per-session bounded queue → SessionStore.appendEvent
+│   ├── typed-events.ts   # typedEvents() helper — narrowing for read sites
+│   └── index.ts          # Public re-exports
+├── errors.ts             # Error classes (Abort, Model, Session, Tool, Event* errors)
 ├── retry.ts              # Shared retry utility
 ├── token-count.ts        # TokenCounter interface + chars/4 default
 ├── cli/
