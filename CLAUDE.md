@@ -80,6 +80,25 @@ agent-express/test  → testAgent() declarative test helper
 - Model specified as string: `"anthropic/claude-sonnet-4-6"` (provider/model format)
 - All adapters support env var fallback: `config > process.env > error/default`
 
+## Documentation Requirements
+
+After implementing any feature (or any speckit phase that lands substantial code), write an **engineering design document** in `docs/design/` describing the as-shipped architecture, the public surface, the data flow, and the design rationale with links to source articles. Spec-driven development gives us the WHAT (in `specs/NNN-feature/spec.md`); the design doc captures the HOW for future contributors who don't read specs and don't have the original conversation context.
+
+Each design doc should include:
+- 2-3 ASCII diagrams of the runtime data flow (single source of truth → multiple views, lifecycle states, etc.)
+- A reference table of public symbols (exports) with file paths
+- Module / file layout
+- Code-level walkthrough of the main pipeline (cite `file:line` for the load-bearing functions)
+- Per-adapter / per-implementation differences when applicable
+- A "Design Rationale & References" section mapping each non-obvious choice to its inspiration: Anthropic engineering blog posts, OpenAI Codex source, Kafka / event-sourcing literature, RFCs, prior framework designs (Express / Koa / Hono / etc.)
+- Open questions / future work pointing at `docs/roadmap.md` items
+
+The document MUST NOT reference `specs/` paths or `FR-NNN` / `T###` IDs — these decay quickly and aren't load-bearing for the reader of the design doc. Reference the **code** (`src/foo.ts:42`) and the **roadmap** for forward-looking items instead.
+
+The document MUST be force-added to git (`git add -f docs/design/foo.md`) since `/docs/` is otherwise gitignored. Linked from `README.md` Architecture & Design Docs section and from CLAUDE.md where the feature is described.
+
+Existing example: [`docs/design/event-log-implementation.md`](docs/design/event-log-implementation.md) — written after Feature 010 v0.4 event-log substrate landed.
+
 ## Testing Requirements
 
 - **Coverage target**: 85%+ statements for all new code. Current: 89% overall.

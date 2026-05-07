@@ -1,12 +1,9 @@
-# Agent Express: Event Log Implementation (v0.4 / Feature 010)
+# Agent Express: Event Log Implementation (v0.4)
 
 > Engineering reference. Describes how the event log substrate is wired in the
-> code as it ships in v0.4. Companion to the spec at
-> `specs/011-event-log-foundation/spec.md` (the WHAT) — this document is the
-> HOW. Cross-checked against Anthropic Managed Agents
+> code as it ships in v0.4. Cross-checked against Anthropic Managed Agents
 > (`docs/research/anthropic-managed-agents-architecture.md`) and OpenAI Codex
-> `thread-store` / `app-server` (`docs/research/codex-architecture-research.md`,
-> `specs/011-event-log-foundation/spec.md` Appendix A).
+> `thread-store` / `app-server` (`docs/research/codex-architecture-research.md`).
 
 ---
 
@@ -259,8 +256,13 @@ full and the consumer is fast.
 `Session.executeTurn` calls `writer.drain(sessionId)` after the `turn:end`
 event is emitted. If drain fails, `agentRun.fail(err)` rejects the result.
 No `fsync` per event — adapter defaults are SQLite WAL=NORMAL, Postgres
-default `synchronous_commit`, Redis AOF=everysec. Rationale and trade-off
-discussed in `specs/011-event-log-foundation/spec.md` §A.4 / FR-026a.
+default `synchronous_commit`, Redis AOF=everysec. Rationale: agent-express
+is a framework, not a managed-cloud platform; per-event `fsync` × dozens of
+events per turn = noticeable latency tax. A `kill -9` of the Node process
+loses no events that already returned from `emit` (writer drain handles it);
+a kernel panic / power-off MAY lose the last few ms of buffered writes.
+Strict-durability mode (`fsync` per event) is recorded in `docs/roadmap.md`
+under "Future / If Demand".
 
 **Adapter throw → `EventStoreWriteError`** wraps the cause and rejects every
 pending write, every drain awaiter, and every backpressure slot waiter for
@@ -549,8 +551,7 @@ for (const e of typedEvents(session.events, "channel:slack:inbound", InboundSche
 This is the "harness customization framework" wedge — vocabulary is part of
 what the user customizes, not a closed enum the framework owns. Anthropic
 SDK and Codex `app-server` both ship closed enums; this is where v0.4
-deliberately diverges. Cross-comparison: `specs/011-event-log-foundation/spec.md`
-Appendix A.7.
+deliberately diverges.
 
 ---
 
@@ -609,33 +610,290 @@ the same envelope shape that streams.
 
 ## 16. Cross-References
 
-**Spec & contracts**:
-- `specs/011-event-log-foundation/spec.md` — feature specification (the WHAT)
-- `specs/011-event-log-foundation/research.md` — implementation decisions
-  (UUIDv7, Zod, vocab merging, adapter shapes, backpressure, lifecycle scoping)
-- `specs/011-event-log-foundation/data-model.md` — entities, validation rules,
-  state transitions
-- `specs/011-event-log-foundation/contracts/` — type-level contracts
+**Source code**:
+- `src/event-log/` — the event log substrate (see § 4 for the file layout)
+- `src/run.ts` — `AgentRun` streaming iterator
+- `src/session.ts` — `Session` class, `executeTurn`, drain at turn:end
+- `src/agent.ts` — `agent.init()` wiring, `findSessionStore` via the
+  `SESSION_STORE_PROVIDER` symbol
+- `src/middleware/memory/store.ts` — `memoryStore()` middleware that
+  advertises a `SessionStore` and replays events on session start
+- `packages/session-{sqlite,redis,postgres}/` — three bundled storage adapters
 
-**Reference architectures**:
+**Tests that exercise the pipeline end-to-end**:
+- `tests/integration/durable-persistence.test.ts` — full Agent + memoryStore
+  + sqliteStore round-trip; session resume replay; idempotent re-emit
+- `tests/event-log/event-log.test.ts` — EventLog primitive (append, subscribe,
+  replay, subscriber-throw containment, close)
+- `tests/event-log/extensibility.test.ts` — middleware-declared event types,
+  `typedEvents` helper, collision detection, forward-compat read
+
+**Reference architectures the design borrows from**:
 - `docs/research/anthropic-managed-agents-architecture.md` — Brain/Hands/Session
   decomposition, 6 procedural methods, credential proxy patterns
 - `docs/research/codex-architecture-research.md` — `RolloutItem` JSONL,
   `ThreadStore::Local|Remote|InMemory`, recovery via replay
 
-**Vocabulary comparison**:
-- `specs/011-event-log-foundation/spec.md` §A.7 — agent-express vs Codex
-  `app-server` event-type comparison, what we borrowed and what we deliberately
-  did not
-
 **Roadmap context**:
-- `docs/roadmap.md` Feature 010 — three-phase v0.4 plan; Feature 011 (`wake`)
-  builds on this substrate; Feature 012 (`ContextAssembler`) consumes events
-  for compaction; Feature 015 (multi-agent) uses `agent:handoff` reserved type
+- `docs/roadmap.md` — multi-process resume (`agent.wake`) builds on this
+  substrate; pluggable `ContextAssembler` consumes events for compaction;
+  multi-agent primitives (`agent:handoff`, `agent:delegate`) emit reserved
+  types declared here
 
 ---
 
-## 17. Open Questions / Future Work
+## 17. Design Rationale & References
+
+The choices documented above didn't emerge from first principles. They're a
+deliberate distillation of three things converging in 2026: Anthropic's
+managed-agents architecture, OpenAI Codex's `thread-store` / `app-server`
+shape, and 30 years of event-sourcing practice from the DDD / Kafka world.
+This section maps each design choice to the public source that influenced it.
+
+### 17.1 Why an event log at all (not a message array)
+
+**Source**: Anthropic, "Scaling Managed Agents: Decoupling the brain from the
+hands" — https://www.anthropic.com/engineering/managed-agents
+
+Anthropic's central insight: *"the session provides this same benefit, serving
+as a context object that lives outside Claude's context window."* The harness
+is stateless; the session log is the source of truth; any harness can
+`wake(sessionId)` and reconstruct context. That decoupling delivered ~60% p50
+TTFT improvement and >90% p95 in their production deployment.
+
+Anthropic's session is conceptually identical to what we call the event log
+here. Their public procedural API (`emitEvent` / `getEvents` / `getSession` /
+`wake` / `provision` / `execute`) shaped our `SessionStore` interface —
+ours is intentionally narrower because we don't yet ship the sandbox /
+provision side of the contract.
+
+**Convergent evidence**: OpenAI Codex independently arrived at the same
+shape. Codex's `RolloutItem` JSONL append-only journal is structurally the
+same primitive — we cross-checked the design against
+https://github.com/openai/codex/tree/main/codex-rs/thread-store. When two
+independent platforms converge on "append-only typed event log per
+conversation as the canonical durable record", that's the strongest
+positive signal in the design space.
+
+### 17.2 Why fine-grained event types vs a coarse enum
+
+**Source**: Claude Agent SDK (TypeScript) message types —
+https://github.com/anthropics/claude-agent-sdk-typescript and the SDK
+reference at https://code.claude.com/docs/en/agent-sdk/typescript
+
+Anthropic's SDK exposes `SDKUserMessage`, `SDKAssistantMessage`,
+`SDKResultMessage`, `SDKSystemMessage`, `SDKCompactBoundaryMessage`,
+`SDKHookStartedMessage` / `SDKHookProgressMessage` / `SDKHookResponseMessage`,
+`SDKToolUseSummaryMessage`, `SDKRateLimitEvent` — fine-grained, one event
+per logical occurrence. Codex chose the opposite: `RolloutItem` is a
+5-variant enum where many things hide under a generic `EventMsg` variant.
+
+We chose Anthropic-style fine grain because:
+1. Validation is meaningful (each event type has a specific Zod schema)
+2. Streaming consumers can branch on `event.type` for UI / dev-console /
+   observability without parsing nested envelope variants
+3. The `tool:call` / `tool:result` naming aligns with industry vocabulary —
+   matches Codex `app-server`'s `item/started` + `item/completed` pattern
+   for tool items even though the data shape differs
+
+### 17.3 Why a unified streaming + persistent surface
+
+**Source**: convergence between Anthropic Managed Agents (events drive
+streaming AND replay) and Codex `app-server`'s notification protocol —
+https://developers.openai.com/codex/app-server
+
+Codex's `app-server` emits server-to-client notifications (`thread/started`,
+`turn/started`, `item/agentMessage/delta`, `turn/completed`, etc.) over
+JSON-RPC. Those notifications ARE the same events that Codex's `RolloutItem`
+JSONL persists — same data, two transport modes.
+
+We made this property explicit: the `for await ... of agentRun` iterator
+yields the same `Event` objects (referential equality, same `id`s) that
+`session.events` exposes that storage adapters persist. v0.3 had separate
+`StreamEvent` (flat shape, no IDs) and `Message[]` (different shape,
+no IDs) — we eliminated the drift.
+
+### 17.4 Why best-effort durability (not strict fsync per event)
+
+**Source**: OpenAI Codex's deliberate stance documented in
+`codex-rs/rollout/src/recorder.rs` and reverse-engineered in our research
+notes. Specifically: Codex's writer task uses bounded `mpsc` channels (capacity
+256), background drain via tokio task, **no `fsync`** — survives `kill -9`
+via OS page cache, may lose tail under kernel panic / power loss.
+
+Anthropic's managed-cloud architecture sits on the other side: every event
+durably committed before acknowledgment. That's appropriate for a managed
+PaaS where the platform owns the durability promise to customers.
+
+agent-express is a framework, not a managed cloud. Per-event `fsync` × dozens
+of events per turn = ~5–10ms × 30 = noticeable latency tax for the
+embedded use case. Codex's empirical evidence (millions of users on the
+best-effort model) is what tipped the design.
+
+The strict-durability mode (`SessionStore.durability: "strict" | "best-effort"`)
+is recorded in `docs/roadmap.md` for if-and-when a real user reports event
+loss in a tail-of-turn crash.
+
+### 17.5 Why per-event `(sessionId, eventId)` idempotency
+
+**Source**: standard pattern from Kafka / RabbitMQ / SQS exactly-once
+semantics. Specific influence: Anthropic's mention of *"`emitEvent` is
+durable + (inferred) idempotent via deterministic event IDs"* in their
+Engineering article.
+
+Codex's `LocalThreadStore` doesn't enforce uniqueness because it's a JSONL
+append file — the file IS the constraint. Network adapters need explicit
+uniqueness. We made the invariant load-bearing across all adapter shapes
+(SQL `(session_id, event_id) PRIMARY KEY`, Redis `event-ids` set guard,
+Postgres `ON CONFLICT DO NOTHING`) because the v0.5 remote-daemon adapter
+will exercise it.
+
+### 17.6 Why UUIDv7 (not ULID, not Snowflake, not autoincrement)
+
+**Source**: RFC 9562 (UUIDv7 specification, 2024) —
+https://www.rfc-editor.org/rfc/rfc9562. Adopted by Anthropic SDK
+(events carry `uuid` per Claude Agent SDK message types) and the broader
+distributed-database industry (PostgreSQL 17 added `uuidv7()`, MongoDB,
+ScyllaDB, etc.).
+
+Properties we wanted:
+- Timestamp-prefixed → lexicographically sortable ≈ chronological order
+  (so storage doesn't need a separate ORDER BY ts)
+- Decentralized (no coordinator) → embedded use case works without
+  network calls
+- 128-bit collision-free at production scale
+- Standard UUID format → broad tooling support
+
+ULID has the same properties but isn't UUID-shaped (Anthropic SDK
+convention divergence). Snowflake needs coordination. KSUID is 27 bytes.
+Autoincrement requires central authority. UUIDv7 won.
+
+### 17.7 Why Zod validation at emit (not just types)
+
+**Source**: real-world LLM safety practice. tRPC, Mastra, LangChain Zod
+schemas — https://github.com/colinhacks/zod and the broader TypeScript
+ecosystem norm of "validate at boundaries."
+
+Pure TypeScript types don't survive the runtime. An LLM can produce
+malformed tool output; a middleware can emit a struct missing a required
+field; a downstream package can be on a slightly different schema version.
+Zod `safeParse` at the emit boundary is the cheap defense.
+
+Specific call-out: Zod accepts shapes that don't round-trip through
+JSON.stringify (functions, BigInt, Date instances, `undefined` values,
+circular refs). We added a JSON-replacer guard as the second validation
+layer — if Zod accepts a value that storage can't represent, the event
+emission fails synchronously rather than silently corrupting the durable
+log. This two-layer pattern is industry-standard for serialization
+boundaries (e.g., gRPC + protobuf marshaling).
+
+### 17.8 Why middleware-declared event vocabulary (not closed enum)
+
+**Source**: deliberate divergence from both Anthropic SDK and Codex
+`app-server`. Both ship closed event enums versioned by the platform itself.
+To add `channel:slack:inbound` to either platform you'd fork the codebase.
+
+The `Middleware.events` extension point is the load-bearing piece of
+agent-express's "harness customization framework" positioning. The
+inspiration is Express.js / Hono — the `(ctx, next)` middleware function
+is the harness primitive, and just as middleware can declare its own state
+schema, it should declare its own event schema. Vocabulary is part of what
+the user customizes.
+
+This is also where v0.4 most clearly diverges from prior art. Cross-comparison
+covered in detail in `docs/design/event-log-implementation.md` § 13 above.
+
+### 17.9 Why bounded queue + background writer (not direct write)
+
+**Source**: standard backpressure pattern from Tokio, Trio, asyncio. Specific
+prior art:
+- Codex `rollout/src/recorder.rs` — bounded mpsc channel (capacity 256),
+  background `rollout_writer` tokio task, retry on transient failure
+- Tokio's standard MPSC backpressure idiom
+
+Direct write per emit would block the agent loop on disk I/O for every
+streaming chunk. The bounded queue lets emit run at memory speed (~1µs)
+while the writer drains at adapter speed (~1–5ms per write). The
+`drain(sessionId)` call at `turn:end` is the durability sync point.
+
+The capacity of 256 is borrowed from Codex's empirical choice — large
+enough that typical turns never block; small enough to bound memory.
+
+### 17.10 Why `derive-history` projects only user/assistant messages
+
+**Source**: matches v0.3 SessionState behavior. The v0.3 implementation only
+called `addMessage` for user input and final assistant text — tool calls /
+results were NOT in `session.history`. The agent loop in `loop.ts` builds
+its model-call message array dynamically per turn, including tool messages
+inline within the turn but not preserving them across turns.
+
+Anthropic's SDK default agent loop and OpenAI's function-calling pattern
+both rebuild tool history fresh per turn from the assistant's natural-language
+reflection ("I called tool X and got result Y"). Verbatim cross-turn tool
+history is a minority requirement; users who need it can write a custom
+projection over `session.events` (the raw log preserves everything).
+
+### 17.11 Reading list for contributors
+
+The below are the public sources we read carefully when designing this
+substrate. Listed in order of how foundational each is to the design:
+
+**Anthropic primary** (foundational — read first if contributing)
+- *Scaling Managed Agents: Decoupling the brain from the hands* —
+  https://www.anthropic.com/engineering/managed-agents
+- *Effective harnesses for long-running agents* —
+  https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
+- *Harness design for long-running application development* —
+  https://www.anthropic.com/engineering/harness-design-long-running-apps
+
+**Anthropic SDK reference**
+- Claude Agent SDK (TypeScript) GitHub —
+  https://github.com/anthropics/claude-agent-sdk-typescript
+- Agent SDK reference docs — https://code.claude.com/docs/en/agent-sdk/typescript
+- Hosting docs (sandbox patterns) —
+  https://code.claude.com/docs/en/agent-sdk/hosting
+- Cost tracking docs (usage / cost-per-call) —
+  https://code.claude.com/docs/en/agent-sdk/cost-tracking
+- Secure deployment docs (credential isolation) —
+  https://code.claude.com/docs/en/agent-sdk/secure-deployment
+
+**OpenAI Codex** (foundational — read first if contributing)
+- Codex GitHub (codex-rs Rust implementation) — https://github.com/openai/codex
+- Codex `thread-store` crate (storage abstraction) —
+  https://github.com/openai/codex/tree/main/codex-rs/thread-store
+- Codex `app-server` developer protocol —
+  https://developers.openai.com/codex/app-server
+
+**Standards & specifications**
+- RFC 9562 — Universally Unique IDentifiers (UUIDv7) —
+  https://www.rfc-editor.org/rfc/rfc9562
+- JSON Schema 2020-12 — https://json-schema.org/specification
+- CloudEvents 1.0 (envelope-and-payload event shape) —
+  https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
+
+**Industry / framework references**
+- Apache Kafka design (event log as foundational primitive, replay semantics) —
+  https://kafka.apache.org/documentation/#design
+- Event Sourcing pattern (Martin Fowler) —
+  https://martinfowler.com/eaaDev/EventSourcing.html
+- Anthropic vs OpenAI architectural comparison (DEV Community write-up,
+  cross-checked against the primary sources above) —
+  https://dev.to/_46ea277e677b888e0cd13/anthropic-managed-agents-architecture-decoupling-brain-from-hands-for-scalable-ai-agents-295k
+
+**Onion-middleware lineage** (where the `(ctx, next)` shape comes from)
+- Express.js middleware — https://expressjs.com/en/guide/using-middleware.html
+- Koa.js context + cascading middleware — https://koajs.com/#middleware
+- Hono framework (modern type-safe `(c, next)` middleware) —
+  https://hono.dev/docs/concepts/middleware
+
+If you're contributing event-log changes, the **Anthropic primary** and
+**OpenAI Codex** clusters are the most important — they describe the
+convergent platform-level decisions that shaped why we built it this way.
+The rest are useful background.
+
+---
+
+## 18. Open Questions / Future Work
 
 These are documented in the spec or roadmap but worth flagging here for
 implementers:
@@ -659,4 +917,4 @@ implementers:
 
 ---
 
-*Last revised: 2026-05-07 (v0.4 / Feature 010 implementation complete, post-code-review fixes).*
+*Last revised: 2026-05-07 (v0.4 implementation complete, post-code-review fixes).*
