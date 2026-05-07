@@ -250,6 +250,12 @@ npx agent-express test                              # agent test runner
 npx agent-express test --ci                         # JUnit XML output for CI
 ```
 
+## Architecture & Design Docs
+
+- [Event Log Implementation](docs/design/event-log-implementation.md) — how `Session.events`, `ctx.emit`, the `Writer` queue, and the three storage adapters fit together (v0.4 / Feature 010)
+- [Middleware Interface Design](docs/design/agent-express-middleware-design.md) — the 5-onion-hook design and why
+- [Concept](docs/design/agent-express-concept.md) — market analysis, core primitive, comparative landscape
+
 ## Links
 
 - [Contributing](CONTRIBUTING.md)
