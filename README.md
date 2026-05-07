@@ -155,14 +155,32 @@ const r2 = await session.run({ input: "What's my name?" })
 await agent.dispose()
 ```
 
-Streaming events as they happen:
+Streaming typed events as they happen:
 
 ```typescript
 for await (const event of agent.run({ input: "Hello" })) {
-  if (event.type === "model:chunk") process.stdout.write(event.text)
-  if (event.type === "tool:start") console.log(`Calling ${event.tool}...`)
+  if (event.type === "model:chunk") process.stdout.write(event.payload.text)
+  if (event.type === "tool:call") console.log(`Calling ${event.payload.name}...`)
 }
 ```
+
+Same `Event` objects flow through the iterator and `session.events`, so
+the streaming view and the persistent log are the same source of truth.
+
+## Persistence
+
+Sessions persist to SQLite, Redis, or Postgres via adapter packages.
+Crash mid-turn, restart, the next session run resumes from the event log:
+
+```typescript
+import { memory } from "agent-express"
+import { sqliteStore } from "@agent-express/session-sqlite"
+
+agent.use(memory.store(sqliteStore({ path: ".agent-express/sessions.db" })))
+```
+
+See [`docs/design/event-log.md`](docs/design/event-log.md) for the full
+substrate design.
 
 ## Testing
 
@@ -252,9 +270,23 @@ npx agent-express test --ci                         # JUnit XML output for CI
 
 ## Architecture & Design Docs
 
-- [Event Log Implementation](docs/design/event-log-implementation.md) — how `Session.events`, `ctx.emit`, the `Writer` queue, and the three storage adapters fit together (v0.4 / Feature 010)
-- [Middleware Interface Design](docs/design/agent-express-middleware-design.md) — the 5-onion-hook design and why
-- [Concept](docs/design/agent-express-concept.md) — market analysis, core primitive, comparative landscape
+For new contributors, the recommended reading order:
+
+1. [Concept](docs/design/agent-express-concept.md) — what we're building, the agent session primitive, why middleware beats graphs, 7-framework comparison
+2. [Middleware Interface](docs/design/middleware-interface.md) — the single `Middleware` interface and `(ctx, next)` onion pattern
+3. [Agent Loop](docs/design/agent-loop.md) — 5-level lifecycle (agent / session / turn / model / tool) and the model→tool→model loop
+4. [Event Log](docs/design/event-log.md) — v0.4 substrate: typed events, durability, `SessionStore` contract
+
+Reference docs for individual subsystems:
+
+- [Providers](docs/design/providers.md) — `"provider/model"` resolution and security guards
+- [Adapters](docs/design/adapters.md) — three adapter families (session / embed / search) and how to write a custom adapter
+- [Observability](docs/design/observability.md) — six observability middlewares and OpenTelemetry integration
+- [Testing](docs/design/testing.md) — `testAgent`, `FunctionModel`, recorder cassettes, real-request guard
+
+See [`docs/design/`](docs/design/) for the full index and
+[`docs/research/`](docs/research/) for reverse-engineering notes on
+adjacent agent frameworks.
 
 ## Links
 

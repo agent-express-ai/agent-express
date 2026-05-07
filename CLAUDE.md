@@ -6,7 +6,7 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 ## Quick Reference
 
 - **Build**: `npm run build` (tsup → dist/)
-- **Test**: `npm test` (vitest, 629 tests, 76 files)
+- **Test**: `npm test` (vitest, 635 tests, 77 files)
 - **Test with coverage**: `npm run test:coverage` (vitest + @vitest/coverage-v8)
 - **Typecheck**: `npm run typecheck` (tsc --noEmit)
 - **Lint**: `npx eslint .`
@@ -15,7 +15,7 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 
 **Core:** Minimal agent loop (model→tool→model cycle only). `Agent` class with `.use()` chainable middleware, explicit `init()`/`dispose()` lifecycle, first-class `Session` for multi-turn, `.run()` convenience shorthand. Single `Middleware` interface with 5 onion hooks: `agent`, `session`, `turn`, `model`, `tool` — all with the same `(ctx, next)` pattern.
 
-**Event log (v0.4):** `Session.events` is the canonical append-only typed event log per session; `Session.history` is a derived `Message[]` view. `ctx.emit({ type, payload })` validates the type+payload against a merged Zod event-type map (core schemas + `Middleware.events` declarations), generates UUIDv7 + ts + schemaVersion, appends in-memory (read-your-writes), and queues durable writes to the configured `SessionStore.appendEvent`. Same `Event` objects (same ids) flow through `session.events`, the `for await ... of agentRun` iterator, and the storage adapter. `memory.store(...)` middleware advertises its backend via the `SESSION_STORE_PROVIDER` symbol; the framework picks it up at `agent.init()`. `turn:end.status` distinguishes `completed` / `interrupted` / `failed`. Full implementation walkthrough: [`docs/design/event-log-implementation.md`](docs/design/event-log-implementation.md).
+**Event log (v0.4):** `Session.events` is the canonical append-only typed event log per session; `Session.history` is a derived `Message[]` view. `ctx.emit({ type, payload })` validates the type+payload against a merged Zod event-type map (core schemas + `Middleware.events` declarations), generates UUIDv7 + ts + schemaVersion, appends in-memory (read-your-writes), and queues durable writes to the configured `SessionStore.appendEvent`. Same `Event` objects (same ids) flow through `session.events`, the `for await ... of agentRun` iterator, and the storage adapter. `memory.store(...)` middleware advertises its backend via the `SESSION_STORE_PROVIDER` symbol; the framework picks it up at `agent.init()`. `turn:end.status` distinguishes `completed` / `interrupted` / `failed`. Full implementation walkthrough: [`docs/design/event-log.md`](docs/design/event-log.md).
 
 **Defaults:** Sensible middleware auto-applied via `defaults()` (retry, usage, tools, duration, maxIterations). Opt-out with `defaults: false`.
 
@@ -82,7 +82,7 @@ agent-express/test  → testAgent() declarative test helper
 
 ## Documentation Requirements
 
-After implementing any feature (or any speckit phase that lands substantial code), write an **engineering design document** in `docs/design/` describing the as-shipped architecture, the public surface, the data flow, and the design rationale with links to source articles. Spec-driven development gives us the WHAT (in `specs/NNN-feature/spec.md`); the design doc captures the HOW for future contributors who don't read specs and don't have the original conversation context.
+After implementing any feature that lands substantial code, write an **engineering design document** in `docs/design/` describing the as-shipped architecture, the public surface, the data flow, and the design rationale with links to source articles. The design doc captures the HOW for future contributors who don't have the original conversation context. Treat private spec-kit notes (kept locally in a workspace-private spec directory) as brain-state for the implementation phase only — the design doc is the artifact that survives.
 
 Each design doc should include:
 - 2-3 ASCII diagrams of the runtime data flow (single source of truth → multiple views, lifecycle states, etc.)
@@ -93,11 +93,13 @@ Each design doc should include:
 - A "Design Rationale & References" section mapping each non-obvious choice to its inspiration: Anthropic engineering blog posts, OpenAI Codex source, Kafka / event-sourcing literature, RFCs, prior framework designs (Express / Koa / Hono / etc.)
 - Open questions / future work pointing at `docs/roadmap.md` items
 
-The document MUST NOT reference `specs/` paths or `FR-NNN` / `T###` IDs — these decay quickly and aren't load-bearing for the reader of the design doc. Reference the **code** (`src/foo.ts:42`) and the **roadmap** for forward-looking items instead.
+The document MUST NOT reference any private workspace paths (spec-kit folder, internal planning docs) or task / requirement IDs — those are workspace-private and not visible to readers cloning the public repo. Reference the **code** (`src/foo.ts:42`) and the **roadmap** for forward-looking items instead.
 
 The document MUST be force-added to git (`git add -f docs/design/foo.md`) since `/docs/` is otherwise gitignored. Linked from `README.md` Architecture & Design Docs section and from CLAUDE.md where the feature is described.
 
-Existing example: [`docs/design/event-log-implementation.md`](docs/design/event-log-implementation.md) — written after Feature 010 v0.4 event-log substrate landed.
+Existing example: [`docs/design/event-log.md`](docs/design/event-log.md) — written after Feature 010 v0.4 event-log substrate landed.
+
+Index of public design docs: [`docs/design/`](docs/design/) — concept, middleware-interface, agent-loop, event-log, providers, adapters, observability, testing.
 
 ## Testing Requirements
 

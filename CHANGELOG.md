@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — v0.4.0 (Event Log Foundation)
 
-> Spec: `specs/011-event-log-foundation/`. Driven by Feature 010 from the v0.4 roadmap.
+> Driven by the v0.4 roadmap (event log foundation). Implementation walkthrough: [`docs/design/event-log.md`](docs/design/event-log.md).
 
 ### BREAKING CHANGES
 
@@ -33,9 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Cross-references
 
-- Anthropic Managed Agents architectural alignment: `docs/research/anthropic-managed-agents-architecture.md`
-- OpenAI Codex `thread-store` cross-validation: `docs/research/codex-architecture-research.md` and `specs/011-event-log-foundation/spec.md` Appendix A
-- Event vocabulary comparison vs Codex `app-server`: `specs/011-event-log-foundation/spec.md` Appendix A.7
+- Architecture walkthrough + design rationale + source-link reading list: [`docs/design/event-log.md`](docs/design/event-log.md)
+- Anthropic Managed Agents — *Scaling Managed Agents: Decoupling the brain from the hands*: https://www.anthropic.com/engineering/managed-agents
+- OpenAI Codex `thread-store` (storage abstraction) and `app-server` (notification protocol) inspired the bundled-adapter shape: https://github.com/openai/codex/tree/main/codex-rs/thread-store and https://developers.openai.com/codex/app-server
 
 ## [0.2.0] - 2026-04-16
 

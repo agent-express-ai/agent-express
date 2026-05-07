@@ -1,9 +1,18 @@
+---
+title: Event Log
+status: shipped
+ships-with: v0.4.0+
+last-revised: 2026-05-07
+audience: contributors
+---
+
 # Agent Express: Event Log Implementation (v0.4)
 
 > Engineering reference. Describes how the event log substrate is wired in the
 > code as it ships in v0.4. Cross-checked against Anthropic Managed Agents
-> (`docs/research/anthropic-managed-agents-architecture.md`) and OpenAI Codex
-> `thread-store` / `app-server` (`docs/research/codex-architecture-research.md`).
+> ([`../research/anthropic-managed-agents.md`](../research/anthropic-managed-agents.md))
+> and OpenAI Codex `thread-store` / `app-server`
+> ([`../research/openai-codex.md`](../research/openai-codex.md)).
 
 ---
 
@@ -610,6 +619,20 @@ the same envelope shape that streams.
 
 ## 16. Cross-References
 
+**Sibling design documents**:
+- [`agent-express-concept.md`](agent-express-concept.md) — what the
+  framework is and why session is the primitive (the event log is how
+  the session primitive is materialized in v0.4)
+- [`agent-loop.md`](agent-loop.md) — when each event fires within the
+  agent loop (§ 8 maps every event type to its emission point)
+- [`middleware-interface.md`](middleware-interface.md) — the
+  `Middleware` interface that declares `events:` and consumes them via
+  hook context
+- [`adapters.md`](adapters.md) — the `SessionStore` contract that
+  durable backends implement
+- [`observability.md`](observability.md) — the events-vs-state choice
+  for observability middleware (§ 17.5 here is the design rationale)
+
 **Source code**:
 - `src/event-log/` — the event log substrate (see § 4 for the file layout)
 - `src/run.ts` — `AgentRun` streaming iterator
@@ -629,9 +652,9 @@ the same envelope shape that streams.
   `typedEvents` helper, collision detection, forward-compat read
 
 **Reference architectures the design borrows from**:
-- `docs/research/anthropic-managed-agents-architecture.md` — Brain/Hands/Session
+- `docs/research/anthropic-managed-agents.md` — Brain/Hands/Session
   decomposition, 6 procedural methods, credential proxy patterns
-- `docs/research/codex-architecture-research.md` — `RolloutItem` JSONL,
+- `docs/research/openai-codex.md` — `RolloutItem` JSONL,
   `ThreadStore::Local|Remote|InMemory`, recovery via replay
 
 **Roadmap context**:
@@ -801,7 +824,7 @@ schema, it should declare its own event schema. Vocabulary is part of what
 the user customizes.
 
 This is also where v0.4 most clearly diverges from prior art. Cross-comparison
-covered in detail in `docs/design/event-log-implementation.md` § 13 above.
+covered in detail in `docs/design/event-log.md` § 13 above.
 
 ### 17.9 Why bounded queue + background writer (not direct write)
 
