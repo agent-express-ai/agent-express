@@ -51,7 +51,7 @@ export function guardTimeout(config: TimeoutConfig = {}): Middleware {
   return {
     name: "guard:timeout",
 
-    async turn(_ctx: TurnContext, next: () => Promise<void>): Promise<void> {
+    async turn(ctx: TurnContext, next: () => Promise<void>): Promise<void> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), turnTimeout)
 
@@ -60,6 +60,10 @@ export function guardTimeout(config: TimeoutConfig = {}): Middleware {
           next(),
           new Promise<never>((_, reject) => {
             controller.signal.addEventListener("abort", () => {
+              ctx.emit({
+                type: "turn:aborted",
+                payload: { reason: "timeout", message: `turn timed out after ${turnTimeout}ms` },
+              })
               reject(new TurnTimeoutError(turnTimeout, "turn"))
             })
           }),
@@ -70,7 +74,7 @@ export function guardTimeout(config: TimeoutConfig = {}): Middleware {
       }
     },
 
-    async model(_ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
+    async model(ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), modelTimeout)
 
@@ -79,6 +83,14 @@ export function guardTimeout(config: TimeoutConfig = {}): Middleware {
           next(),
           new Promise<never>((_, reject) => {
             controller.signal.addEventListener("abort", () => {
+              ctx.emit({
+                type: "turn:aborted",
+                payload: {
+                  reason: "timeout",
+                  message: `model call timed out after ${modelTimeout}ms`,
+                  callIndex: ctx.callIndex,
+                },
+              })
               reject(new TurnTimeoutError(modelTimeout, "model"))
             })
           }),

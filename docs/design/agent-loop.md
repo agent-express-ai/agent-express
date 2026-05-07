@@ -335,20 +335,23 @@ Three ways a middleware can change control flow:
 ### 7.1 `ctx.abort(reason)` — hard stop
 
 Throws `AbortError` that unwinds the entire onion stack up to the session
-level. The turn fails with `status: "interrupted"` and the result
-promise rejects. Use for unrecoverable conditions:
+level. The turn ends with `status: "aborted"` and the result promise
+rejects. Use for unrecoverable conditions:
 
 ```typescript
 turn: async (ctx, next) => {
   if (ctx.state["guard:budget:totalCost"] > LIMIT) {
-    ctx.abort("Budget exceeded")  // throws AbortError
+    ctx.abort("Budget exceeded")  // emits turn:aborted, then throws AbortError
   }
   await next()
 }
 ```
 
-The `error` event is emitted automatically by `executeTurn`'s catch
-block before the `turn:end` event is written.
+`ctx.abort` first emits a `turn:aborted` event with `reason: "abort"` and
+the supplied message, then throws. `executeTurn`'s catch block records
+`status: "aborted"` on the `turn:end` event. The `error` event is **not**
+emitted for abort flow — predictable guard interventions own
+`turn:aborted`, and `error` stays reserved for unexpected exceptions.
 
 ### 7.2 Short-circuit: `ctx.skipCall` / `ctx.deny`
 
@@ -378,10 +381,18 @@ turn ends).
 
 ### 7.3 Throwing from middleware
 
-If a `model` middleware throws, the loop's `try { ... }` in
-`executeTurn` catches it. The turn ends with `status: "failed"`, an
-`error` event is emitted, and the result promise rejects with the
-original error.
+If a `model` middleware throws an unexpected exception, the loop's
+`try { ... }` in `executeTurn` catches it. The turn ends with
+`status: "failed"`, an `error` event is emitted with
+`{ scope: "turn", kind, message, cause? }`, and the result promise
+rejects with the original error.
+
+A middleware that wants to signal a *predictable* harness intervention
+(rather than an unexpected failure) should emit a `turn:aborted` event
+with a `reason` first, then throw `AbortError` (or call `ctx.abort()`,
+which does both). This is the pattern the built-in guards
+(`guard.budget`, `guard.timeout`, `guard.maxIterations`,
+`guard.rateLimit`, `guard.input`, `guard.output`) already follow.
 
 ---
 

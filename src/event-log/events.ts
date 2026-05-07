@@ -104,24 +104,55 @@ export const EMITTED_CORE_EVENTS: EventTypeMap = {
   },
 
   /**
-   * `turn:end.status` distinguishes a normal completion from an interrupt
-   * (`AbortError`) and a failure (any other thrown error). Borrowed from
-   * Codex `app-server` `turn/completed`.
+   * `turn:end.status` distinguishes a normal completion from an abort
+   * (guard intervention via `AbortError`) and a failure (any other thrown
+   * error). When `status === "aborted"`, a `turn:aborted` event with the
+   * specific guard reason precedes this event in the log.
    */
   "turn:end": {
     schema: z.object({
       turnIndex: z.number().int().nonnegative(),
       turnId: z.string(),
       text: z.string(),
-      status: z.enum(["completed", "interrupted", "failed"]),
+      status: z.enum(["completed", "aborted", "failed"]),
     }),
     schemaVersion: SCHEMA_V1,
   },
 
+  /**
+   * Emitted by guard middleware when it intervenes in normal flow —
+   * either by throwing (e.g., budget exceeded, timeout fired) or by
+   * short-circuiting (e.g., maxIterations cap, rate-limit message).
+   * Distinct from `error` which is reserved for unexpected exceptions.
+   *
+   * `reason` is an open-set string. Built-in guards use:
+   * `budget` | `timeout` | `maxIterations` | `rateLimit` | `input` | `output` | `abort`.
+   * Custom guards may pick their own values.
+   */
+  "turn:aborted": {
+    schema: z.object({
+      reason: z.string(),
+      message: z.string().optional(),
+      callIndex: z.number().int().nonnegative().optional(),
+    }),
+    schemaVersion: SCHEMA_V1,
+  },
+
+  /**
+   * Reserved for **unexpected** failures — exceptions that aren't part of
+   * the harness's guard-and-stop flow. For predictable guard interventions,
+   * see `turn:aborted`.
+   *
+   * `scope` identifies which lifecycle layer the exception bubbled out of
+   * (e.g., a tool that threw vs. an agent-level init failure). `kind` is
+   * the error class name. `cause` is a serialized cause chain when present.
+   */
   error: {
     schema: z.object({
+      scope: z.enum(["agent", "session", "turn", "model", "tool"]),
       kind: z.string(),
       message: z.string(),
+      cause: z.string().optional(),
     }),
     schemaVersion: SCHEMA_V1,
   },
@@ -130,9 +161,14 @@ export const EMITTED_CORE_EVENTS: EventTypeMap = {
 // ─── Reserved-emitted in v0.4 ─────────────────────────────────────────
 
 /**
- * Declared in core, but core code does not emit. Tools / tool-providing
- * middleware MAY emit these between `tool:call` and `tool:result` to
- * record streaming progress (stdout/stderr, search progress, MCP deltas).
+ * Declared in core, with payload schemas published, but emitted only by
+ * specific built-in middleware rather than the core agent loop.
+ *
+ * - `tool:progress` — emitted by tool-providing middleware between `tool:call`
+ *   and `tool:result` to record streaming output (stdout/stderr, MCP deltas).
+ * - `permission:*` — emitted by `guard.approve()` per HITL decision.
+ * - `compaction:applied` — emitted by `memory.compaction()` after a successful
+ *   pass over the message array.
  */
 export const RESERVED_EMITTED_CORE_EVENTS: EventTypeMap = {
   "tool:progress": {
@@ -140,6 +176,62 @@ export const RESERVED_EMITTED_CORE_EVENTS: EventTypeMap = {
       tool: z.string(),
       callId: z.string(),
       delta: z.string(),
+    }),
+    schemaVersion: SCHEMA_V1,
+  },
+
+  "permission:approved": {
+    schema: z.object({
+      tool: z.string(),
+      callId: z.string(),
+      classifier: z.string().optional(),
+      remembered: z.boolean().optional(),
+    }),
+    schemaVersion: SCHEMA_V1,
+  },
+
+  "permission:denied": {
+    schema: z.object({
+      tool: z.string(),
+      callId: z.string(),
+      classifier: z.string().optional(),
+      reason: z.string(),
+    }),
+    schemaVersion: SCHEMA_V1,
+  },
+
+  /**
+   * Emitted when a permission classifier modifies tool arguments.
+   * Original and modified arg shapes carried verbatim — callers must
+   * not rely on these values being free of secrets (responsibility
+   * lies with the classifier author).
+   */
+  "permission:modified": {
+    schema: z.object({
+      tool: z.string(),
+      callId: z.string(),
+      classifier: z.string().optional(),
+      reason: z.string().optional(),
+      originalArgs: z.record(z.string(), z.unknown()),
+      modifiedArgs: z.record(z.string(), z.unknown()),
+    }),
+    schemaVersion: SCHEMA_V1,
+  },
+
+  /**
+   * Emitted by `memory.compaction()` after compaction runs successfully.
+   * Underlying events in the log are never modified or removed —
+   * compaction stays in the harness, the log is the source of truth.
+   * `tokensBefore` / `tokensAfter` are token counts of the in-context
+   * `Message[]` (before-and-after of this compaction pass).
+   */
+  "compaction:applied": {
+    schema: z.object({
+      strategy: z.string(),
+      tokensBefore: z.number().int().nonnegative().optional(),
+      tokensAfter: z.number().int().nonnegative().optional(),
+      messagesBefore: z.number().int().nonnegative().optional(),
+      messagesAfter: z.number().int().nonnegative().optional(),
     }),
     schemaVersion: SCHEMA_V1,
   },
@@ -161,12 +253,8 @@ const placeholder = (): { schema: typeof PLACEHOLDER_SCHEMA; schemaVersion: numb
 })
 
 export const RESERVED_ONLY_CORE_EVENTS: EventTypeMap = {
-  "compaction:applied": placeholder(),
   "agent:handoff": placeholder(),
   "agent:delegate": placeholder(),
-  "permission:approved": placeholder(),
-  "permission:denied": placeholder(),
-  "permission:modified": placeholder(),
   "turn:diff": placeholder(),
   "turn:plan": placeholder(),
   "model:reasoning:chunk": placeholder(),

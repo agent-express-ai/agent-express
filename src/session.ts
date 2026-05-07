@@ -197,7 +197,7 @@ export class Session {
 
     let turnText = ""
     let turnData: unknown = undefined
-    let turnStatus: "completed" | "interrupted" | "failed" = "completed"
+    let turnStatus: "completed" | "aborted" | "failed" = "completed"
     let caughtError: Error | null = null
 
     const turnBody = async () => {
@@ -250,11 +250,25 @@ export class Session {
       await turnOnion(turnCtx)
     } catch (err) {
       caughtError = err instanceof Error ? err : new Error(String(err))
-      turnStatus = caughtError instanceof AbortError ? "interrupted" : "failed"
-      turnCtx.emit({
-        type: "error",
-        payload: { kind: caughtError.name ?? "Error", message: caughtError.message },
-      })
+      const isAbort = caughtError instanceof AbortError
+      turnStatus = isAbort ? "aborted" : "failed"
+      // Only emit `error` for unexpected exceptions. Predictable guard
+      // interventions emit `turn:aborted` themselves before throwing
+      // `AbortError`, so we don't double-record those.
+      if (!isAbort) {
+        const cause = (caughtError as Error & { cause?: unknown }).cause
+        turnCtx.emit({
+          type: "error",
+          payload: {
+            scope: "turn",
+            kind: caughtError.name || "Error",
+            message: caughtError.message,
+            ...(cause !== undefined && {
+              cause: cause instanceof Error ? cause.message : String(cause),
+            }),
+          },
+        })
+      }
     }
 
     // Middleware may short-circuit (e.g., guard.rateLimit) by setting ctx.output

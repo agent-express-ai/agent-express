@@ -110,6 +110,15 @@ export function createTurnContext(
     turnIndex,
     startedAt: Date.now(),
     abort(reason: string): never {
+      // Record the explicit abort point in the event log before unwinding
+      // the onion. `executeTurn`'s catch suppresses the duplicate `error`
+      // emit when the throw is an `AbortError`.
+      try {
+        ctx.emit({ type: "turn:aborted", payload: { reason: "abort", message: reason } })
+      } catch {
+        // Ignore emit failures (e.g., session closed) — the throw below is
+        // still the real signal.
+      }
       throw new AbortError(reason)
     },
   } as TurnContext

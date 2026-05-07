@@ -88,9 +88,9 @@ export function agentEscalation(config?: EscalationConfig): Middleware {
       if (counter >= threshold) {
         ctx.output = escalationMessage
         ctx.emit({
-          type: "error",
+          type: "turn:aborted",
           payload: {
-            kind: "EscalationSafetyNet",
+            reason: "escalation",
             message: `Escalation safety-net triggered after ${threshold} unproductive turns`,
           },
         })

@@ -489,21 +489,39 @@ Defined in `src/event-log/events.ts`. Three categories.
 | `tool:call` | `{ tool, args, callId }` | `loop.ts` per tool invocation |
 | `tool:result` | `{ tool, callId, result, error? }` | `loop.ts` after tool execution |
 | `turn:start` | `{ turnIndex, turnId }` | `executeTurn` |
-| `turn:end` | `{ turnIndex, turnId, text, status }` | `executeTurn` (status: `completed`/`interrupted`/`failed`) |
-| `error` | `{ kind, message }` | on caught exception in `executeTurn` |
+| `turn:end` | `{ turnIndex, turnId, text, status }` | `executeTurn` (status: `completed`/`aborted`/`failed`) |
+| `turn:aborted` | `{ reason, message?, callIndex? }` | guard middleware before throw / short-circuit |
+| `error` | `{ scope, kind, message, cause? }` | `executeTurn` catch (only for unexpected exceptions, **not** AbortError) |
 
-**Reserved-emitted in v0.4** (declared in core, not core-emitted; tools or
-adapters MAY emit):
+**Two distinct outcomes** for "the turn didn't end normally":
 
-| Type | Payload | Notes |
+- `turn:aborted` — predictable harness intervention. Emitted by the guard
+  itself before throwing `AbortError` or short-circuiting (e.g.
+  `guard.budget` exceeded, `guard.timeout` fired, `guard.maxIterations`
+  cap, `guard.rateLimit`, `guard.input`/`guard.output` blocked,
+  `ctx.abort(...)` called explicitly, `preset-support.escalation`
+  trigger). The event records *why*. `turn:end.status` is then `"aborted"`.
+- `error` — an unexpected exception bubbled out of `agent`/`session`/`turn`/
+  `model`/`tool`. `scope` records which layer threw; `kind` is the error
+  class name; `cause` is the serialised cause chain when present.
+  `turn:end.status` is then `"failed"`. Predictable guard interventions
+  use `turn:aborted` instead, so they aren't double-recorded.
+
+**Reserved-emitted in v0.4** (declared in core, emitted only by specific
+built-in middleware rather than the core agent loop):
+
+| Type | Payload | Emitter |
 |---|---|---|
-| `tool:progress` | `{ tool, callId, delta }` | for streaming tool output (stdout/stderr, MCP progress) |
+| `tool:progress` | `{ tool, callId, delta }` | tool-providing middleware between `tool:call` and `tool:result` (stdout/stderr, MCP deltas) |
+| `permission:approved` | `{ tool, callId, classifier?, remembered? }` | `guard.approve()` per HITL approval |
+| `permission:denied` | `{ tool, callId, classifier?, reason }` | `guard.approve()` per HITL denial |
+| `permission:modified` | `{ tool, callId, classifier?, reason?, originalArgs, modifiedArgs }` | `guard.approve()` when classifier modifies args |
+| `compaction:applied` | `{ strategy, tokensBefore?, tokensAfter?, messagesBefore?, messagesAfter? }` | `memory.compaction()` after each compaction pass |
 
 **Reserved-only** (declared, not emitted; framework owns the names so user
 middleware can't claim them — full list in `src/event-log/events.ts`):
 
-`compaction:applied`, `agent:handoff`, `agent:delegate`, `permission:approved`,
-`permission:denied`, `permission:modified`, `turn:diff`, `turn:plan`,
+`agent:handoff`, `agent:delegate`, `turn:diff`, `turn:plan`,
 `model:reasoning:chunk`, `model:reasoning:end`.
 
 ---

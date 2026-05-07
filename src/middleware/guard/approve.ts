@@ -104,15 +104,43 @@ export function guardApprove(config: ApproveConfig): Middleware {
           if (decision.remember) {
             ctx.state["guard:approve:remembered"] = [...remembered, ctx.tool.name]
           }
+          ctx.emit({
+            type: "permission:approved",
+            payload: {
+              tool: ctx.tool.name,
+              callId: ctx.callId,
+              ...(decision.remember !== undefined && { remembered: decision.remember }),
+            },
+          })
           return next()
 
         case "deny":
+          ctx.emit({
+            type: "permission:denied",
+            payload: {
+              tool: ctx.tool.name,
+              callId: ctx.callId,
+              reason: decision.reason,
+            },
+          })
           ctx.deny(decision.reason)
           return next()
 
-        case "modify":
+        case "modify": {
+          // Snapshot original args before middleware mutates them.
+          const originalArgs = { ...ctx.args }
+          ctx.emit({
+            type: "permission:modified",
+            payload: {
+              tool: ctx.tool.name,
+              callId: ctx.callId,
+              originalArgs,
+              modifiedArgs: { ...decision.args },
+            },
+          })
           ctx.modifyArgs(decision.args)
           return next()
+        }
 
         default:
           return next()

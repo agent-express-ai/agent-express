@@ -97,6 +97,11 @@ export function budgetGuard(config: BudgetConfig): Middleware {
     async model(ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
       const currentCost = (ctx.state["guard:budget:totalCost"] as number) ?? 0
       if (currentCost >= config.limit) {
+        const message = `cost=$${currentCost.toFixed(4)} >= limit=$${config.limit.toFixed(2)}`
+        ctx.emit({
+          type: "turn:aborted",
+          payload: { reason: "budget", message, callIndex: ctx.callIndex },
+        })
         if (onLimit === "error") {
           throw new BudgetExceededError(currentCost, config.limit)
         }

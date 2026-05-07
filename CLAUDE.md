@@ -6,7 +6,7 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 ## Quick Reference
 
 - **Build**: `npm run build` (tsup → dist/)
-- **Test**: `npm test` (vitest, 635 tests, 77 files)
+- **Test**: `npm test` (vitest, 647 tests, 78 files)
 - **Test with coverage**: `npm run test:coverage` (vitest + @vitest/coverage-v8)
 - **Typecheck**: `npm run typecheck` (tsc --noEmit)
 - **Lint**: `npx eslint .`
@@ -15,7 +15,9 @@ Three concepts: `Agent`, `Session`, and `Middleware`. That's the entire framewor
 
 **Core:** Minimal agent loop (model→tool→model cycle only). `Agent` class with `.use()` chainable middleware, explicit `init()`/`dispose()` lifecycle, first-class `Session` for multi-turn, `.run()` convenience shorthand. Single `Middleware` interface with 5 onion hooks: `agent`, `session`, `turn`, `model`, `tool` — all with the same `(ctx, next)` pattern.
 
-**Event log (v0.4):** `Session.events` is the canonical append-only typed event log per session; `Session.history` is a derived `Message[]` view. `ctx.emit({ type, payload })` validates the type+payload against a merged Zod event-type map (core schemas + `Middleware.events` declarations), generates UUIDv7 + ts + schemaVersion, appends in-memory (read-your-writes), and queues durable writes to the configured `SessionStore.appendEvent`. Same `Event` objects (same ids) flow through `session.events`, the `for await ... of agentRun` iterator, and the storage adapter. `memory.store(...)` middleware advertises its backend via the `SESSION_STORE_PROVIDER` symbol; the framework picks it up at `agent.init()`. `turn:end.status` distinguishes `completed` / `interrupted` / `failed`. Full implementation walkthrough: [`docs/design/event-log.md`](docs/design/event-log.md).
+**Event log (v0.4):** `Session.events` is the canonical append-only typed event log per session; `Session.history` is a derived `Message[]` view. `ctx.emit({ type, payload })` validates the type+payload against a merged Zod event-type map (core schemas + `Middleware.events` declarations), generates UUIDv7 + ts + schemaVersion, appends in-memory (read-your-writes), and queues durable writes to the configured `SessionStore.appendEvent`. Same `Event` objects (same ids) flow through `session.events`, the `for await ... of agentRun` iterator, and the storage adapter. `memory.store(...)` middleware advertises its backend via the `SESSION_STORE_PROVIDER` symbol; the framework picks it up at `agent.init()`. `turn:end.status` distinguishes `completed` / `aborted` / `failed`. Full implementation walkthrough: [`docs/design/event-log.md`](docs/design/event-log.md).
+
+**Built-in middleware emitters (v0.4):** `guard.approve()` emits `permission:approved/denied/modified`. `memory.compaction()` emits `compaction:applied`. The five throw/short-circuit guards (`guard.budget`, `guard.timeout`, `guard.maxIterations`, `guard.rateLimit`, `guard.input`, `guard.output`) emit `turn:aborted{ reason, message?, callIndex? }` before intervening — `reason` is one of `budget` | `timeout` | `maxIterations` | `rateLimit` | `input` | `output`. `ctx.abort(reason)` emits `turn:aborted{reason: "abort"}` before throwing `AbortError`. The `error` event is reserved for **unexpected** exceptions and now requires `scope: "agent" | "session" | "turn" | "model" | "tool"` plus `kind`, `message`, optional `cause`. Predictable guard aborts no longer emit `error` (avoids double-recording).
 
 **Defaults:** Sensible middleware auto-applied via `defaults()` (retry, usage, tools, duration, maxIterations). Opt-out with `defaults: false`.
 

@@ -222,11 +222,15 @@ describe("event-log: core event-type map completeness", () => {
       validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "completed" }),
     ).not.toThrow()
     expect(() =>
-      validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "interrupted" }),
+      validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "aborted" }),
     ).not.toThrow()
     expect(() =>
       validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "failed" }),
     ).not.toThrow()
+    // Old name "interrupted" no longer accepted (renamed in v0.4)
+    expect(() =>
+      validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "interrupted" }),
+    ).toThrow(EventValidationError)
     // Invalid status
     expect(() =>
       validateEmit(merged, "turn:end", { turnIndex: 0, turnId: "t", text: "x", status: "weird" }),

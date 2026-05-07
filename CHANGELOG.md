@@ -13,12 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Removed `@agent-express/session-openai`.** The OpenAI Conversation API stores messages, not events, and is fundamentally incompatible with the v0.4 event-log session model. Migrate to `@agent-express/session-sqlite`, `session-redis`, or `session-postgres`. Existing v0.3 on-disk session data is not expected to load on v0.4.
 - **`Session.history` is now a derived view.** The framework no longer maintains a separate authoritative `Message[]` array. The `Session.history` getter returns the same `{ role, content }[]` shape as v0.3, computed from the new `Session.events` log on read. Code that read `session.history` keeps working unchanged. Code that mutated internal `SessionState.history` directly will break — read via the public `Session.events` / `Session.history` surface instead.
+- **`turn:end.status` enum renamed.** The third value `"interrupted"` is now `"aborted"` to align with the new `turn:aborted` event. Code that pattern-matches `turn:end.status === "interrupted"` must switch to `"aborted"`. The other two values (`"completed"` / `"failed"`) are unchanged.
+- **`error` event payload extended.** `error.payload` now requires `scope: "agent" | "session" | "turn" | "model" | "tool"` in addition to `kind` and `message`. `cause?: string` is also accepted. Code that emitted bare `{ kind, message }` will fail validation and must add `scope`.
+- **`error` event no longer fires for `AbortError`.** Predictable guard interventions emit `turn:aborted` (see below) and skip the `error` emit so the same intervention isn't recorded twice. Code that listened on `error` for guard aborts (budget cap, timeout, rate limit, etc.) must switch to `turn:aborted`.
 
 ### Added
 
 - `Session.events` — canonical append-only typed event log per session.
 - `Middleware.events` field — middleware authors declare event-type schemas (Zod) parallel to the existing `state` field. Schemas merge at agent construction; collisions throw `EventTypeCollisionError`.
-- Core event vocabulary with Zod-validated payloads: `user:input`, `model:start/chunk/end/response`, `tool:call/result`, `turn:start`, `turn:end` (with three-way `status: "completed" | "interrupted" | "failed"` enum), `error`. Plus reserved-emitted `tool:progress` and reserved-only types for upcoming features (`compaction:applied`, `agent:handoff/delegate`, `permission:approved/denied/modified`, `turn:diff`, `turn:plan`, `model:reasoning:chunk/end`).
+- Core event vocabulary with Zod-validated payloads: `user:input`, `model:start/chunk/end/response`, `tool:call/result`, `turn:start`, `turn:end` (with three-way `status: "completed" | "aborted" | "failed"` enum), `turn:aborted`, `error`. Plus reserved-emitted `tool:progress`, `permission:approved/denied/modified`, `compaction:applied`, and reserved-only types for upcoming features (`agent:handoff/delegate`, `turn:diff`, `turn:plan`, `model:reasoning:chunk/end`).
+- **`turn:aborted` event** — predictable harness intervention recorded with `{ reason, message?, callIndex? }`. Emitted by the guard itself before throwing `AbortError` or short-circuiting normal flow. Built-in guards use these `reason` values: `budget`, `timeout`, `maxIterations`, `rateLimit`, `input`, `output`, `abort` (from `ctx.abort(...)`), `escalation` (from `preset-support`).
+- **Wired emitters in built-in middleware**:
+  - `guard.approve()` — emits `permission:approved` / `permission:denied` / `permission:modified` per HITL decision.
+  - `memory.compaction()` — emits `compaction:applied` after each successful compaction pass.
+  - `guard.budget()` / `guard.timeout()` / `guard.maxIterations()` / `guard.rateLimit()` / `guard.input()` / `guard.output()` — emit `turn:aborted` with the matching `reason` before intervening.
+  - `ctx.abort(...)` — emits `turn:aborted{reason: "abort"}` before throwing.
+  - `@agent-express/preset-support` `escalation()` — emits `turn:aborted{reason: "escalation"}` instead of the previous `error`.
 - `typedEvents(events, schema, type)` helper for narrowing reads to a specific event type.
 - `expectEventTypes(events, types)`, `expectEventPayload(events, type)`, `countEvents(events, type)` test helpers in `agent-express/test`.
 - `SESSION_STORE_PROVIDER` symbol — middlewares advertise a `SessionStore` to the framework via this symbol; `memory.store(...)` sets it automatically.
