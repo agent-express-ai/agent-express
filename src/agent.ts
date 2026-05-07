@@ -1,5 +1,5 @@
 import type { LanguageModelV3 } from "@ai-sdk/provider"
-import type { AgentDef, RunOptions, ModelResponse, Tool, SessionOptions } from "./types.js"
+import type { AgentDef, RunOptions, RunResult, ModelResponse, Tool, SessionOptions, EventTypeMap, SessionStore } from "./types.js"
 import type {
   Middleware, AgentContext, ModelContext, HookScope,
   AgentHookFn, SessionHookFn, TurnHookFn, ModelHookFn, ToolHookFn,
@@ -12,11 +12,13 @@ import { resolveModel } from "./providers/resolve.js"
 import { callLanguageModel } from "./providers/adapter.js"
 import { Session } from "./session.js"
 import type { SessionInternals } from "./session.js"
-import { EventBus } from "./events.js"
+import { mergeEventTypeMaps } from "./event-log/validate.js"
+import { Writer } from "./event-log/writer.js"
+import { EventLog, SESSION_STORE_PROVIDER } from "./event-log/event-log.js"
 import { defaults } from "./defaults.js"
 
 /** Symbol.asyncDispose polyfill for Node.js 20 */
-(Symbol as any).asyncDispose ??= Symbol.for("Symbol.asyncDispose")
+;(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for("Symbol.asyncDispose")
 
 /** Map from scope name to the corresponding hook function type. */
 type ScopeHookFn = {
@@ -65,6 +67,8 @@ export class Agent {
   private resolveAgentLifecycle: (() => void) | null = null
   private agentOnionPromise: Promise<void> | null = null
   private readonly openSessions = new Set<Session>()
+  private eventTypeMap: EventTypeMap | null = null
+  private writer: Writer | null = null
 
   constructor(def: AgentDef) {
     this.name = def.name
@@ -110,6 +114,15 @@ export class Agent {
 
     // Auto-apply defaults before init
     this.applyDefaults()
+
+    // Merge core + middleware-declared event vocabularies. Throws on collision.
+    this.eventTypeMap = mergeEventTypeMaps(this.middlewares)
+
+    // Build the durable-write queue if a SessionStore was provided in defaults
+    // or via middleware (memory.store etc.). Resolved lazily — the agent
+    // doesn't require a SessionStore.
+    const store = this.findSessionStore()
+    this.writer = store ? new Writer(store) : null
 
     const modelId = typeof this.def.model === "string" ? this.def.model : this.def.model.modelId
     this.agentCtx = createAgentContext(
@@ -176,16 +189,15 @@ export class Agent {
    * @returns A Session object for executing turns
    */
   session(opts?: SessionOptions): Session {
-    // Session creation is synchronous for DX, but we need init.
-    // If not initialized, we start init and the first run() will await it.
-    // For truly async init, call agent.init() first.
     const stateSchemas = this.middlewares.filter((m) => m.state).map((m) => m.state!)
     const store = new SessionState(opts?.id, stateSchemas)
     const modelId = typeof this.def.model === "string" ? this.def.model : this.def.model.modelId
 
-    // Explicit check instead of null assertion
     if (!this.agentCtx) {
       throw new Error("Agent not initialized. Call agent.init() before creating sessions.")
+    }
+    if (!this.eventTypeMap) {
+      throw new Error("Agent event-type map not built. Call agent.init() before creating sessions.")
     }
 
     const internals: SessionInternals = {
@@ -194,18 +206,19 @@ export class Agent {
       resolvedModel: this.resolvedModel,
       modelId,
       callModel: (ctx) => this.callModel(ctx),
+      eventTypeMap: this.eventTypeMap,
+      writer: this.writer,
       onClose: (s) => this.openSessions.delete(s),
     }
 
     const session = new Session(store, internals)
     this.openSessions.add(session)
 
-    // Start session onion — run() awaits this internally
-    const bus = new EventBus()
-    ;(session as any).initPromise = session._initOnion(bus).catch((err: Error) => {
-      // Store error — will surface when session.run() is called
-      ;(session as any)._initError = err
-    })
+    ;(session as unknown as { initPromise?: Promise<void> }).initPromise = session
+      ._initOnion()
+      .catch((err: Error) => {
+        ;(session as unknown as { _initError?: Error })._initError = err
+      })
 
     return session
   }
@@ -223,60 +236,52 @@ export class Agent {
    * ```
    */
   run(input: string, opts?: RunOptions): AgentRun {
-    const agentRun = new AgentRun("ephemeral")
+    // Need to return synchronously, but the inner session is created lazily
+    // inside the async path (init may not have run yet). Build a proxy log
+    // that the outer AgentRun iterates; pump events from the inner session's
+    // log into the proxy via a subscription. Result is forwarded directly.
+    const proxyLog = new EventLog()
+    const outer = new AgentRun(proxyLog)
 
-    this.executeConvenienceRun(input, opts, agentRun).catch((err) => {
-      agentRun.fail(err instanceof Error ? err : new Error(String(err)))
-    })
+    this.executeConvenienceRun(input, opts, proxyLog).then(
+      (result) => outer.complete(result),
+      (err) => outer.fail(err instanceof Error ? err : new Error(String(err))),
+    )
 
-    return agentRun
+    return outer
   }
 
-  private async executeConvenienceRun(input: string, opts: RunOptions | undefined, agentRun: AgentRun): Promise<void> {
+  private async executeConvenienceRun(
+    input: string,
+    opts: RunOptions | undefined,
+    proxyLog: EventLog,
+  ): Promise<RunResult> {
     await this.init()
 
-    const stateSchemas = this.middlewares.filter((m) => m.state).map((m) => m.state!)
-    const store = new SessionState(undefined, stateSchemas)
-    const modelId = typeof this.def.model === "string" ? this.def.model : this.def.model.modelId
-
-    if (!this.agentCtx) {
-      throw new Error("Agent not initialized. Call agent.init() before running.")
-    }
-
-    const internals: SessionInternals = {
-      agentCtx: this.agentCtx,
-      middlewares: this.middlewares,
-      resolvedModel: this.resolvedModel,
-      modelId,
-      callModel: (ctx) => this.callModel(ctx),
-      onClose: () => {},
-    }
-
-    const session = new Session(store, internals)
-    const bus = new EventBus()
-
-    // Wire bus events to agentRun
-    void (async () => {
-      for await (const event of bus) {
-        agentRun.emit(event)
-      }
-    })()
-
-    await session._initOnion(bus)
-
-    const innerRun = session.run(input, opts)
-
-    // Forward the result
+    const session = this.session()
+    // Forward inner session events to the outer proxy log so streaming
+    // consumers of agent.run() see the same Event objects (same IDs).
+    const unsubscribe = session._eventLog.subscribe((event) => proxyLog.append(event))
     try {
+      const innerRun = session.run(input, opts)
       const result = await innerRun.result
+      return result
+    } finally {
+      unsubscribe()
+      proxyLog.close()
       await session.close()
-      bus.close()
-      agentRun.complete(result)
-    } catch (err) {
-      await session.close()
-      bus.close()
-      throw err
     }
+  }
+
+  private findSessionStore(): SessionStore | null {
+    // Walk middleware for one that advertises a SessionStore via the
+    // SESSION_STORE_PROVIDER symbol (set by `memory.store()` and any other
+    // middleware that wants to provide durable persistence). First match wins.
+    for (const mw of this.middlewares) {
+      const candidate = (mw as { [SESSION_STORE_PROVIDER]?: SessionStore })[SESSION_STORE_PROVIDER]
+      if (candidate) return candidate
+    }
+    return null
   }
 
   private applyDefaults(): void {

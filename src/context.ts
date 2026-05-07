@@ -1,4 +1,4 @@
-import type { Message, StreamEvent, ModelResponse, ToolResult, Tool } from "./types.js"
+import type { Message, EmitInput, ModelResponse, ToolResult, Tool, Event, EventEnvelope, EventTypeMap } from "./types.js"
 import type {
   AgentContext,
   SessionContext,
@@ -6,9 +6,11 @@ import type {
   ModelContext,
   ToolContext,
 } from "./middleware.js"
-import { AbortError } from "./errors.js"
+import { AbortError, EventOutsideSessionError } from "./errors.js"
 import type { SessionState } from "./session-store.js"
-import type { EventBus } from "./events.js"
+import type { Writer } from "./event-log/writer.js"
+import { nextEventId } from "./event-log/id.js"
+import { validateEmit } from "./event-log/validate.js"
 
 export function createAgentContext(
   agentDef: AgentContext["agent"],
@@ -27,20 +29,68 @@ export function createAgentContext(
   } as AgentContext & { _tools: Tool[] }
 }
 
+/**
+ * Build the `emit` closure for a session-scoped context.
+ *
+ * Validates the type+payload against the merged eventTypeMap, generates a
+ * UUIDv7 + timestamp, appends to the session's `EventLog` (read-your-writes),
+ * and queues a durable write through the optional `Writer`. Throws
+ * `EventOutsideSessionError` after the session has ended.
+ */
+function buildSessionEmit(
+  session: SessionState,
+  eventTypeMap: EventTypeMap,
+  writer: Writer | null,
+): (input: EmitInput) => void {
+  return (input: EmitInput) => {
+    if (session.eventLog.isClosed) {
+      throw new EventOutsideSessionError(`session ${session.id} has ended`)
+    }
+    const validated = validateEmit(eventTypeMap, input.type, input.payload)
+    const event: Event = {
+      id: nextEventId(),
+      ts: Date.now(),
+      type: input.type,
+      schemaVersion: validated.schemaVersion,
+      payload: validated.payload,
+    }
+    session.eventLog.append(event)
+    if (writer) {
+      // ord = the index where this event landed in the log. Stays monotonic
+      // across replay/resume because replay populates earlier indices first.
+      const ord = session.eventLog.events.length - 1
+      const envelope: EventEnvelope = {
+        sessionId: session.id,
+        eventId: event.id,
+        ord,
+        ts: event.ts,
+        type: event.type,
+        schemaVersion: event.schemaVersion,
+        payload: event.payload,
+      }
+      // Fire-and-forget queueing — the durable-write Promise is awaited at the
+      // turn:end durability boundary via writer.drain(sessionId).
+      void writer.enqueue(envelope).catch(() => {
+        // Adapter failures surface via writer.drain() — do not double-throw here.
+      })
+    }
+  }
+}
+
 export function createSessionContext(
   agentCtx: AgentContext,
   session: SessionState,
-  bus: EventBus,
+  eventTypeMap: EventTypeMap,
+  writer: Writer | null,
 ): SessionContext {
-  return {
+  const ctx = {
     ...agentCtx,
     sessionId: session.id,
     state: session.state,
-    history: session.history,
-    emit(event: StreamEvent) {
-      bus.emit(event)
-    },
-  }
+    emit: buildSessionEmit(session, eventTypeMap, writer),
+  } as SessionContext
+  defineLiveHistory(ctx, session)
+  return ctx
 }
 
 export function createTurnContext(
@@ -49,7 +99,10 @@ export function createTurnContext(
   turnId: string,
   turnIndex: number,
 ): TurnContext {
-  return {
+  // Get the live session reference from sessionCtx so the derived `history`
+  // continues to update as new events land during the turn.
+  const session = (sessionCtx as SessionContext & { _session?: SessionState })._session
+  const ctx = {
     ...sessionCtx,
     input,
     output: null,
@@ -57,9 +110,42 @@ export function createTurnContext(
     turnIndex,
     startedAt: Date.now(),
     abort(reason: string): never {
+      // Record the explicit abort point in the event log before unwinding
+      // the onion. `executeTurn`'s catch suppresses the duplicate `error`
+      // emit when the throw is an `AbortError`.
+      try {
+        ctx.emit({ type: "turn:aborted", payload: { reason: "abort", message: reason } })
+      } catch {
+        // Ignore emit failures (e.g., session closed) — the throw below is
+        // still the real signal.
+      }
       throw new AbortError(reason)
     },
-  }
+  } as TurnContext
+  if (session) defineLiveHistory(ctx, session)
+  return ctx
+}
+
+/**
+ * Define `history` as a live getter on the given context. Re-derives the
+ * `Message[]` view from the underlying event log on each access so chained
+ * contexts (turn → model → tool) all see the latest projection.
+ */
+function defineLiveHistory(ctx: object, session: SessionState): void {
+  Object.defineProperty(ctx, "history", {
+    get() {
+      return session.history
+    },
+    enumerable: true,
+    configurable: true,
+  })
+  // Also stash the session ref so chained contexts can rebind the getter.
+  Object.defineProperty(ctx, "_session", {
+    value: session,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  })
 }
 
 export function createModelContext(

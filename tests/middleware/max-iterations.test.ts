@@ -90,10 +90,12 @@ describe("guard.maxIterations()", () => {
 
     const mw = guardMaxIterations(2)
     const turnId = "test-turn-123"
+    const emitted: Array<{ type: string; payload: unknown }> = []
+    const ctxStub = { turnId, callIndex: 0, emit: (e: { type: string; payload: unknown }) => emitted.push(e) } as any
 
     // Simulate the turn hook to initialize the counter
     await mw.turn!(
-      { turnId } as any,
+      ctxStub,
       async () => {
         // Simulate 3 model calls within a single turn
         let modelCallCount = 0
@@ -108,23 +110,26 @@ describe("guard.maxIterations()", () => {
         }
 
         // Call 1: count = 1, count <= max(2), passes through
-        const r1 = await mw.model!({ turnId } as any, fakeNext)
+        const r1 = await mw.model!(ctxStub, fakeNext)
         expect(r1.finishReason).toBe("tool-calls")
         expect(r1.toolCalls).toBeDefined()
 
         // Call 2: count = 2, count >= max(2), strips tool calls (lines 59-65)
-        const r2 = await mw.model!({ turnId } as any, fakeNext)
+        const r2 = await mw.model!(ctxStub, fakeNext)
         expect(r2.finishReason).toBe("length")
         expect(r2.toolCalls).toBeUndefined()
         expect(r2.text).toBe("model text")
 
         // Call 3: count = 3, count > max(2), skips LLM entirely (lines 47-52)
-        const r3 = await mw.model!({ turnId } as any, fakeNext)
+        const r3 = await mw.model!(ctxStub, fakeNext)
         expect(r3.text).toBe("")
         expect(r3.finishReason).toBe("length")
         expect(r3.usage).toEqual({ inputTokens: 0, outputTokens: 0 })
         // fakeNext was NOT called for this iteration
         expect(modelCallCount).toBe(2)
+
+        // Both interventions emitted turn:aborted{reason:"maxIterations"}
+        expect(emitted.filter((e) => e.type === "turn:aborted")).toHaveLength(2)
       },
     )
   })

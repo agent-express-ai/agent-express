@@ -1,19 +1,25 @@
-import type { Message, RunOptions, RunResult, Tool, ModelResponse, StreamEvent } from "./types.js"
+import type { Message, RunOptions, RunResult, Tool, ModelResponse, Event, EventTypeMap } from "./types.js"
 import type { Middleware, AgentContext, SessionContext, ModelContext } from "./middleware.js"
 import { SessionState } from "./session-store.js"
 import { AgentRun } from "./run.js"
 import { composeHooks } from "./executor.js"
 import { createSessionContext, createTurnContext } from "./context.js"
 import { runAgentLoop } from "./loop.js"
-import { SessionClosedError, SessionBusyError, StructuredOutputParseError, StructuredOutputValidationError } from "./errors.js"
-import type { EventBus } from "./events.js"
+import {
+  AbortError,
+  SessionClosedError,
+  SessionBusyError,
+  StructuredOutputParseError,
+  StructuredOutputValidationError,
+} from "./errors.js"
+import type { Writer } from "./event-log/writer.js"
 import type { LanguageModelV3 } from "@ai-sdk/provider"
 import { zodToJsonSchema } from "./tools/zod-to-json.js"
 import { callLanguageModel } from "./providers/adapter.js"
 import { snapshotState } from "./state.js"
 
 /** Symbol.asyncDispose polyfill for Node.js 20 */
-(Symbol as any).asyncDispose ??= Symbol.for("Symbol.asyncDispose")
+;(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for("Symbol.asyncDispose")
 
 /** Internal context passed from Agent to Session constructor. */
 export interface SessionInternals {
@@ -23,28 +29,51 @@ export interface SessionInternals {
   modelId: string
   callModel: (ctx: ModelContext) => Promise<ModelResponse>
   responseFormat?: { type: "json"; schema: Record<string, unknown>; name?: string }
+  eventTypeMap: EventTypeMap
+  writer: Writer | null
   onClose: (session: Session) => void
 }
 
 /**
  * A first-class conversation session.
  *
- * Created by `agent.session()`. Holds conversation history and state
- * that persist across multiple turns. Turns execute sequentially.
+ * Created by `agent.session()`. Holds the canonical event log, derived
+ * conversation history, and shared state across multiple turns. Turns
+ * execute sequentially.
  *
  * @example
  * ```typescript
  * const session = agent.session()
  * const r1 = await session.run("Hello").result
  * const r2 = await session.run("Follow up").result
+ * for (const event of session.events) {
+ *   console.log(event.type, event.ts)
+ * }
  * await session.close()
  * ```
  */
+/**
+ * Best-effort string serialization of an unknown `Error.cause` chain link.
+ * Returns `undefined` when there is no cause or when no safe representation
+ * exists (e.g., a plain object whose `toString` would yield "[object Object]").
+ */
+function stringifyCause(cause: unknown): string | undefined {
+  if (cause === undefined || cause === null) return undefined
+  if (cause instanceof Error) return cause.message
+  if (typeof cause === "string") return cause
+  if (typeof cause === "number" || typeof cause === "boolean" || typeof cause === "bigint") {
+    return String(cause)
+  }
+  try {
+    return JSON.stringify(cause)
+  } catch {
+    return undefined
+  }
+}
+
 export class Session {
   /** Unique session identifier. */
   readonly id: string
-  /** Flat chronological conversation history, auto-accumulates across turns. */
-  readonly history: Message[]
   /** Session state — read-only for client code. Middleware writes via ctx.state. */
   readonly state: Record<string, unknown>
 
@@ -63,8 +92,25 @@ export class Session {
     this.store = store
     this.internals = internals
     this.id = store.id
-    this.history = store.history
     this.state = store.state
+  }
+
+  /** Canonical append-only event log for this session. */
+  get events(): readonly Event[] {
+    return this.store.events
+  }
+
+  /** @internal — direct access to the underlying EventLog for framework wiring. */
+  get _eventLog() {
+    return this.store.eventLog
+  }
+
+  /**
+   * Derived `Message[]` view of the conversation, computed from events
+   * on read. Same shape as v0.3 `history` (`{ role, content }[]`).
+   */
+  get history(): Message[] {
+    return this.store.history
   }
 
   /**
@@ -72,11 +118,15 @@ export class Session {
    * Called by Agent.session() after construction.
    * @internal
    */
-  async _initOnion(emitBus: EventBus): Promise<void> {
+  async _initOnion(): Promise<void> {
     this.store.start()
 
-    const emitter = { emit: (event: StreamEvent) => emitBus.emit(event) }
-    this.sessionCtx = createSessionContext(this.internals.agentCtx, this.store, emitter as any)
+    this.sessionCtx = createSessionContext(
+      this.internals.agentCtx,
+      this.store,
+      this.internals.eventTypeMap,
+      this.internals.writer,
+    )
 
     let signalReady!: () => void
     const readyPromise = new Promise<void>((r) => (signalReady = r))
@@ -102,8 +152,9 @@ export class Session {
   /**
    * Execute a single conversational turn.
    *
-   * Returns an `AgentRun` with dual interface: async iterable for streaming,
-   * `.result` Promise for the final `RunResult`.
+   * Returns an `AgentRun` with dual interface: async iterable for streaming
+   * the events emitted during this turn, `.result` Promise for the final
+   * `RunResult`.
    *
    * @param input - User message text
    * @param opts - Optional run options (e.g., output schema)
@@ -114,14 +165,13 @@ export class Session {
     if (this.closed) throw new SessionClosedError(this.id)
     if (this.turnInProgress) throw new SessionBusyError(this.id)
 
-    const agentRun = new AgentRun(this.id)
+    const agentRun = new AgentRun(this.store.eventLog)
     this.turnInProgress = true
 
-    this.executeTurn(input, opts, agentRun)
-      .catch((err) => {
-        this.turnInProgress = false
-        agentRun.fail(err instanceof Error ? err : new Error(String(err)))
-      })
+    this.executeTurn(input, opts, agentRun).catch((err) => {
+      this.turnInProgress = false
+      agentRun.fail(err instanceof Error ? err : new Error(String(err)))
+    })
 
     return agentRun
   }
@@ -140,6 +190,7 @@ export class Session {
     }
 
     this.store.complete()
+    this.internals.writer?.forget(this.id)
     this.internals.onClose(this)
   }
 
@@ -149,44 +200,38 @@ export class Session {
   }
 
   private async executeTurn(input: string, opts: RunOptions | undefined, agentRun: AgentRun): Promise<void> {
-    // Wait for session onion init to complete
     if (this.initPromise) await this.initPromise
+    const initError = (this as { _initError?: Error })._initError
+    if (initError) throw initError
     if (!this.sessionCtx) throw new Error("Session not initialized")
-
-    const inputMsg: Message = { role: "user", content: input }
-    this.store.addMessage(inputMsg)
 
     const turnId = crypto.randomUUID()
     const currentTurnIndex = this.turnIndex++
+    const inputMsg: Message = { role: "user", content: input }
     const turnCtx = createTurnContext(this.sessionCtx, [inputMsg], turnId, currentTurnIndex)
 
-    // Wire events through to AgentRun via a wrapper that calls both
-    const originalEmit = turnCtx.emit.bind(turnCtx)
-    const wrappedEmit = (event: StreamEvent) => {
-      originalEmit(event)
-      agentRun.emit(event)
-    }
-    // Override emit on this context object (not via (as any) — turnCtx is a plain object)
-    Object.defineProperty(turnCtx, "emit", { value: wrappedEmit, configurable: true })
-
-    agentRun.emit({ type: "turn:start", turnIndex: currentTurnIndex, turnId })
+    // Emit core lifecycle markers via the unified event log surface.
+    turnCtx.emit({ type: "turn:start", payload: { turnIndex: currentTurnIndex, turnId } })
+    turnCtx.emit({ type: "user:input", payload: { text: input } })
 
     let turnText = ""
     let turnData: unknown = undefined
+    let turnStatus: "completed" | "aborted" | "failed" = "completed"
+    let caughtError: Error | null = null
 
     const turnBody = async () => {
       const uniqueTools = (this.internals.agentCtx._tools ?? []).filter(
         (t, i, arr) => arr.findIndex((x) => x.name === t.name) === i,
       )
 
-      // If structured output requested, build responseFormat and inject system instruction
       let callModel = this.internals.callModel
       if (opts?.output) {
         const jsonSchema = zodToJsonSchema(opts.output)
         const responseFormat = { type: "json" as const, schema: jsonSchema, name: "response" }
         callModel = async (ctx: ModelContext) => {
-          // Inject JSON format instruction into system prompt
-          ctx.addSystemMessage(`Respond with valid JSON matching this schema: ${JSON.stringify(jsonSchema)}. Do not include markdown code fences or any text outside the JSON object.`)
+          ctx.addSystemMessage(
+            `Respond with valid JSON matching this schema: ${JSON.stringify(jsonSchema)}. Do not include markdown code fences or any text outside the JSON object.`,
+          )
           return callLanguageModel(this.internals.resolvedModel!, ctx, responseFormat)
         }
       }
@@ -202,9 +247,7 @@ export class Session {
 
       turnText = loopResult.text
       ;(turnCtx as { output: string | null }).output = loopResult.text
-      this.store.addMessage({ role: "assistant", content: loopResult.text })
 
-      // Parse structured output if schema provided
       if (opts?.output && loopResult.text) {
         let parsed: unknown
         try {
@@ -221,23 +264,68 @@ export class Session {
       }
     }
 
-    const turnOnion = composeHooks(this.internals.middlewares, "turn", turnBody)
-    await turnOnion(turnCtx)
+    try {
+      const turnOnion = composeHooks(this.internals.middlewares, "turn", turnBody)
+      await turnOnion(turnCtx)
+    } catch (err) {
+      caughtError = err instanceof Error ? err : new Error(String(err))
+      const isAbort = caughtError instanceof AbortError
+      turnStatus = isAbort ? "aborted" : "failed"
+      // Only emit `error` for unexpected exceptions. Predictable guard
+      // interventions emit `turn:aborted` themselves before throwing
+      // `AbortError`, so we don't double-record those.
+      if (!isAbort) {
+        const cause = (caughtError as Error & { cause?: unknown }).cause
+        const causeStr = stringifyCause(cause)
+        turnCtx.emit({
+          type: "error",
+          payload: {
+            scope: "turn",
+            kind: caughtError.name || "Error",
+            message: caughtError.message,
+            ...(causeStr !== undefined && { cause: causeStr }),
+          },
+        })
+      }
+    }
 
-    // Middleware may short-circuit (e.g., guard.rateLimit) by setting ctx.output without calling next().
-    // In that case turnBody never runs, so prefer ctx.output over the loop result.
+    // Middleware may short-circuit (e.g., guard.rateLimit) by setting ctx.output
+    // without calling next(). Prefer ctx.output over the loop result.
     const finalText = turnCtx.output ?? turnText
 
-    // After onion completes (all middleware after-next has run), snapshot state and complete
+    // Emit the rolled-up assistant text + turn-end durability boundary.
+    if (caughtError === null) {
+      turnCtx.emit({ type: "model:response", payload: { text: finalText } })
+    }
+    turnCtx.emit({
+      type: "turn:end",
+      payload: { turnIndex: currentTurnIndex, turnId, text: finalText, status: turnStatus },
+    })
+
+    // Drain pending durable writes before reporting the turn done.
+    if (this.internals.writer) {
+      try {
+        await this.internals.writer.drain(this.id)
+      } catch (drainErr) {
+        const err = drainErr instanceof Error ? drainErr : new Error(String(drainErr))
+        this.turnInProgress = false
+        agentRun.fail(err)
+        return
+      }
+    }
+
     this.turnInProgress = false
-    agentRun.emit({ type: "turn:end", turnIndex: turnCtx.turnIndex, turnId: turnCtx.turnId, text: finalText })
+
+    if (caughtError) {
+      agentRun.fail(caughtError)
+      return
+    }
 
     const result: RunResult = {
       text: finalText,
       state: snapshotState(this.store.state),
       data: turnData,
     }
-
     agentRun.complete(result)
   }
 }

@@ -29,7 +29,7 @@ export type {
   RunOptions,
   RunResult,
   SessionOptions,
-  StreamEvent,
+  EmitInput,
   Message,
   MessagePart,
   Tool,
@@ -47,6 +47,10 @@ export type {
   SearchResult,
   SessionStore,
   SessionData,
+  Event,
+  EventEnvelope,
+  EventTypeSchema,
+  EventTypeMap,
   PiiMapping,
   PiiType,
   StateSchema,
@@ -207,5 +211,16 @@ export type { TokenCounter } from "./token-count.js"
 export { resolveModel } from "./providers/resolve.js"
 export { callLanguageModel, toAiSdkMessages, toAiSdkTools, fromAiSdkResult } from "./providers/adapter.js"
 
-// Events
-export { EventBus } from "./events.js"
+// Event log
+export {
+  EventLog,
+  Writer,
+  nextEventId,
+  mergeEventTypeMaps,
+  deriveHistory,
+  typedEvents,
+  CORE_EVENT_TYPE_MAP,
+  EMITTED_CORE_EVENTS,
+  RESERVED_EMITTED_CORE_EVENTS,
+  RESERVED_ONLY_CORE_EVENTS,
+} from "./event-log/index.js"

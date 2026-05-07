@@ -59,7 +59,12 @@ export function inputGuard(validator: InputValidator): Middleware {
       const result = await validator(ctx)
 
       if (!result.ok) {
-        throw new InputGuardrailError(result.reason ?? "Input validation failed")
+        const reason = result.reason ?? "Input validation failed"
+        ctx.emit({
+          type: "turn:aborted",
+          payload: { reason: "input", message: reason, callIndex: ctx.callIndex },
+        })
+        throw new InputGuardrailError(reason)
       }
 
       if (result.messages) {

@@ -69,25 +69,23 @@ describe("Session multi-turn with middleware", () => {
     await agent.init()
     const session = agent.session()
 
-    const events1: import("../../src/types.js").StreamEvent[] = []
+    const events1: import("../../src/types.js").Event[] = []
     for await (const event of session.run("turn 1")) {
       events1.push(event)
     }
 
-    const events2: import("../../src/types.js").StreamEvent[] = []
+    const events2: import("../../src/types.js").Event[] = []
     for await (const event of session.run("turn 2")) {
       events2.push(event)
     }
 
-    // Both have turn events
-    expect(events1.map(e => e.type)).toContain("turn:start")
-    expect(events2.map(e => e.type)).toContain("turn:start")
+    expect(events1.map((e) => e.type)).toContain("turn:start")
+    expect(events2.map((e) => e.type)).toContain("turn:start")
 
-    // Turn indices are different
-    const turn1Start = events1.find(e => e.type === "turn:start") as any
-    const turn2Start = events2.find(e => e.type === "turn:start") as any
-    expect(turn1Start.turnIndex).toBe(0)
-    expect(turn2Start.turnIndex).toBe(1)
+    const turn1Start = events1.find((e) => e.type === "turn:start")!
+    const turn2Start = events2.find((e) => e.type === "turn:start")!
+    expect((turn1Start.payload as { turnIndex: number }).turnIndex).toBe(0)
+    expect((turn2Start.payload as { turnIndex: number }).turnIndex).toBe(1)
 
     await session.close()
     await agent.dispose()

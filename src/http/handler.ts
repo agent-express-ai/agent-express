@@ -36,7 +36,7 @@ interface SessionEntry {
  * Creates a Web-standard `Request → Response` handler for an agent.
  *
  * The handler parses a JSON request body (`{ input: string }`),
- * runs one turn in a session, and streams `StreamEvent` objects back
+ * runs one turn in a session, and streams `Event` objects back
  * as Server-Sent Events.
  *
  * Sessions are kept in memory keyed by session ID with automatic TTL eviction.
@@ -164,6 +164,19 @@ export function createHandler(
 
             for await (const event of run) {
               const data = `data: ${JSON.stringify(event)}\n\n`
+              controller.enqueue(encoder.encode(data))
+            }
+
+            // Append a final SSE message with the run result so consumers
+            // get text + state snapshot without having to track them through
+            // individual events. Not part of the event log itself.
+            try {
+              const result = await run.result
+              const data = `data: ${JSON.stringify({ type: "result", result })}\n\n`
+              controller.enqueue(encoder.encode(data))
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              const data = `data: ${JSON.stringify({ type: "result", error: message })}\n\n`
               controller.enqueue(encoder.encode(data))
             }
           } finally {

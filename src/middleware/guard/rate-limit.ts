@@ -87,6 +87,10 @@ export function guardRateLimit(config?: RateLimitConfig): Middleware {
     async turn(ctx: TurnContext, next: () => Promise<void>): Promise<void> {
       const key = getKey(ctx)
       if (isExceeded(key)) {
+        ctx.emit({
+          type: "turn:aborted",
+          payload: { reason: "rateLimit", message: `rate limit hit (max=${maxPerMinute}/min, by=${by})` },
+        })
         if (onExceeded === "throw") {
           throw new UserRateLimitError(rateLimitMessage)
         }

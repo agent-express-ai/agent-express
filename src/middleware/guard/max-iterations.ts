@@ -44,6 +44,14 @@ export function guardMaxIterations(max: number = 25): Middleware {
 
       if (count > max) {
         // Already over limit — skip the LLM call entirely.
+        ctx.emit({
+          type: "turn:aborted",
+          payload: {
+            reason: "maxIterations",
+            message: `iteration cap reached (max=${max})`,
+            callIndex: ctx.callIndex,
+          },
+        })
         return {
           text: "",
           finishReason: "length",
@@ -57,6 +65,14 @@ export function guardMaxIterations(max: number = 25): Middleware {
       // unnecessary tool executions. The loop will see a text-only response
       // and exit gracefully.
       if (count >= max && response.toolCalls && response.toolCalls.length > 0) {
+        ctx.emit({
+          type: "turn:aborted",
+          payload: {
+            reason: "maxIterations",
+            message: `iteration cap reached (max=${max}); tool calls stripped`,
+            callIndex: ctx.callIndex,
+          },
+        })
         return {
           text: response.text ?? "",
           finishReason: "length",

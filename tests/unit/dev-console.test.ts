@@ -29,7 +29,7 @@ describe("dev.console()", () => {
     const agent = new Agent({ name: "test", model: createMockModel(), instructions: "test", logging: false })
     agent.use(devConsole())
 
-    await agent.run({ input: "hi" }).result
+    await agent.run("hi").result
 
     const output = stderrSpy.mock.calls.map((c) => c[0] as string).join("")
     expect(output).toContain("session")
@@ -52,7 +52,7 @@ describe("dev.console()", () => {
 
     // Suppress actual stderr
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
-    await agent.run({ input: "hi" }).result
+    await agent.run("hi").result
     stderrSpy.mockRestore()
 
     expect(lines[0]).toContain("session")
@@ -70,7 +70,7 @@ describe("dev.console()", () => {
     }))
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
-    await agent.run({ input: "hi" }).result
+    await agent.run("hi").result
     stderrSpy.mockRestore()
 
     const modelEntry = entries.find((e) => e.type === "model:call")
@@ -91,7 +91,7 @@ describe("dev.console()", () => {
     }))
 
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
-    await agent.run({ input: "hi" }).result
+    await agent.run("hi").result
     stderrSpy.mockRestore()
 
     expect(formatted.some((l) => l.startsWith("[session:start]"))).toBe(true)

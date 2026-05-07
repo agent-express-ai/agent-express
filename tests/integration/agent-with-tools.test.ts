@@ -142,20 +142,19 @@ describe("Agent with tools", () => {
       }),
     )
 
-    const events: import("../../src/types.js").StreamEvent[] = []
+    const events: import("../../src/types.js").Event[] = []
     for await (const event of agent.run("test")) {
       events.push(event)
     }
 
     const types = events.map((e) => e.type)
-    expect(types).toContain("tool:start")
-    expect(types).toContain("tool:end")
+    expect(types).toContain("tool:call")
+    expect(types).toContain("tool:result")
 
-    const toolStart = events.find((e) => e.type === "tool:start")
-    expect(toolStart).toBeDefined()
-    if (toolStart?.type === "tool:start") {
-      expect(toolStart.tool).toBe("greet")
-      expect(toolStart.args).toEqual({ name: "Alice" })
-    }
+    const toolCall = events.find((e) => e.type === "tool:call")
+    expect(toolCall).toBeDefined()
+    const payload = toolCall!.payload as { tool: string; args: Record<string, unknown> }
+    expect(payload.tool).toBe("greet")
+    expect(payload.args).toEqual({ name: "Alice" })
   })
 })

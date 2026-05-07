@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { Agent } from "../../src/agent.js"
 import type { LanguageModelV3, LanguageModelV3GenerateResult } from "@ai-sdk/provider"
-import type { StreamEvent } from "../../src/types.js"
+import type { Event } from "../../src/types.js"
 
 /** Creates a mock LanguageModelV3 that returns a fixed text response. */
 function createMockModel(text: string): LanguageModelV3 {
@@ -55,7 +55,7 @@ describe("Agent", () => {
     const model = createMockModel("Streamed!")
     const agent = new Agent({ name: "test", model, instructions: "test", defaults: false })
 
-    const events: StreamEvent[] = []
+    const events: Event[] = []
     for await (const event of agent.run("stream")) {
       events.push(event)
     }
@@ -65,7 +65,7 @@ describe("Agent", () => {
     expect(types).toContain("model:start")
     expect(types).toContain("model:end")
     // session:end is emitted by AgentRun.complete()
-    expect(types).toContain("session:end")
+    expect(types).toContain("turn:end")
     // Verify correct event ordering
     const modelStart = types.indexOf("model:start")
     const modelEnd = types.indexOf("model:end")

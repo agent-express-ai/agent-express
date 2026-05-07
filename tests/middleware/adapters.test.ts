@@ -34,11 +34,9 @@ describe("Adapter packages — exports", () => {
     const { sqliteStore } = await import("../../packages/session-sqlite/src/index.js")
     const { redisStore } = await import("../../packages/session-redis/src/index.js")
     const { postgresStore } = await import("../../packages/session-postgres/src/index.js")
-    const { openaiStore } = await import("../../packages/session-openai/src/index.js")
 
     expect(typeof sqliteStore).toBe("function")
     expect(typeof redisStore).toBe("function")
     expect(typeof postgresStore).toBe("function")
-    expect(typeof openaiStore).toBe("function")
   })
 })

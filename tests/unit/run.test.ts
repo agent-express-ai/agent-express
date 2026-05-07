@@ -1,70 +1,65 @@
 import { describe, it, expect } from "vitest"
 import { AgentRun } from "../../src/run.js"
-import type { StreamEvent, RunResult } from "../../src/types.js"
+import { EventLog } from "../../src/event-log/event-log.js"
+import { nextEventId } from "../../src/event-log/id.js"
+import type { Event, RunResult } from "../../src/types.js"
 
 const mockResult: RunResult = {
-  output: "hello",
-  cost: 0.001,
-  usage: { inputTokens: 10, outputTokens: 5 },
-  tools: [],
-  turns: 1,
-  duration: 100,
-  messages: [],
+  text: "hello",
   state: {},
 }
 
 describe("AgentRun", () => {
-  it("streams events via async iteration", async () => {
-    const run = new AgentRun()
-    run.emit({ type: "session:start", sessionId: "s1" })
-    run.emit({ type: "model:chunk", text: "hi" })
+  it("streams only events emitted after the run was constructed", async () => {
+    const log = new EventLog()
+    log.append({ id: nextEventId(), ts: Date.now(), type: "user:input", schemaVersion: 1, payload: { text: "earlier" } })
+    const run = new AgentRun(log)
+
+    log.append({ id: nextEventId(), ts: Date.now(), type: "model:chunk", schemaVersion: 1, payload: { callIndex: 0, text: "hi" } })
+    log.append({ id: nextEventId(), ts: Date.now(), type: "model:end", schemaVersion: 1, payload: { callIndex: 0, text: "hi", finishReason: "stop" } })
     run.complete(mockResult)
 
-    const events: StreamEvent[] = []
+    const events: Event[] = []
     for await (const event of run) {
       events.push(event)
     }
 
-    expect(events).toHaveLength(3) // start + chunk + session:end
-    expect(events[0]!.type).toBe("session:start")
-    expect(events[1]!.type).toBe("model:chunk")
-    expect(events[2]!.type).toBe("session:end")
+    expect(events).toHaveLength(2)
+    expect(events[0]!.type).toBe("model:chunk")
+    expect(events[1]!.type).toBe("model:end")
   })
 
   it("resolves .result with RunResult", async () => {
-    const run = new AgentRun()
+    const log = new EventLog()
+    const run = new AgentRun(log)
     run.complete(mockResult)
-
     const result = await run.result
-    expect(result.output).toBe("hello")
-    expect(result.cost).toBe(0.001)
+    expect(result.text).toBe("hello")
   })
 
   it("rejects .result on failure", async () => {
-    const run = new AgentRun()
+    const log = new EventLog()
+    const run = new AgentRun(log)
     run.fail(new Error("boom"))
-
     await expect(run.result).rejects.toThrow("boom")
   })
 
-  it("emits error event on failure", async () => {
-    const run = new AgentRun()
-
-    // Prevent unhandled rejection — we test .result rejection separately
+  it("stops yielding once complete() is called", async () => {
+    const log = new EventLog()
+    const run = new AgentRun(log)
     run.result.catch(() => {})
 
     const collecting = (async () => {
-      const events: StreamEvent[] = []
-      for await (const event of run) {
-        events.push(event)
-      }
-      return events
+      const collected: Event[] = []
+      for await (const event of run) collected.push(event)
+      return collected
     })()
 
-    run.fail(new Error("boom"))
+    log.append({ id: nextEventId(), ts: Date.now(), type: "user:input", schemaVersion: 1, payload: { text: "x" } })
+    run.complete(mockResult)
+    log.append({ id: nextEventId(), ts: Date.now(), type: "user:input", schemaVersion: 1, payload: { text: "y" } })
 
     const events = await collecting
     expect(events).toHaveLength(1)
-    expect(events[0]!.type).toBe("error")
   })
 })

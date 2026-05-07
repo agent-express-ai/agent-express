@@ -14,7 +14,7 @@ website/node_modules/
 website/dist/
 website/.astro/
 
-/docs/
+/docs/.private/
 /specs/
 /.specify/
 /.claude/

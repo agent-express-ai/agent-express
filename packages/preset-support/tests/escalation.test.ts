@@ -106,7 +106,7 @@ describe("agent.escalation() — integration", () => {
     await agent.dispose()
   })
 
-  it("emits error event when escalation triggers", async () => {
+  it("emits turn:aborted event when escalation triggers", async () => {
     const threshold = 2
 
     const model = new FunctionModel(() => ({
@@ -123,15 +123,18 @@ describe("agent.escalation() — integration", () => {
 
     await session.run("msg 1").result
 
-    const events: import("../../../src/types.js").StreamEvent[] = []
+    const events: import("../../../src/types.js").Event[] = []
     const run = session.run("msg 2")
     for await (const event of run) {
       events.push(event)
     }
 
-    const errorEvents = events.filter((e) => e.type === "error")
-    expect(errorEvents.length).toBeGreaterThan(0)
-    expect((errorEvents[0] as any).error.message).toContain("Escalation safety-net triggered")
+    const escalationEvents = events.filter(
+      (e) => e.type === "turn:aborted" && (e.payload as { reason: string }).reason === "escalation",
+    )
+    expect(escalationEvents.length).toBeGreaterThan(0)
+    const payload = escalationEvents[0]!.payload as { reason: string; message?: string }
+    expect(payload.message).toContain("Escalation safety-net triggered")
 
     await session.close()
     await agent.dispose()

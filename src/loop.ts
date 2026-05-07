@@ -85,11 +85,14 @@ export async function runAgentLoop(
             )
           }),
         ])
-        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, callId: ctx.callId, result })
+        turnCtx.emit({ type: "tool:result", payload: { tool: ctx.tool.name, callId: ctx.callId, result } })
         return { callId: ctx.callId, result }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err))
-        turnCtx.emit({ type: "tool:end", tool: ctx.tool.name, callId: ctx.callId, result: null })
+        turnCtx.emit({
+          type: "tool:result",
+          payload: { tool: ctx.tool.name, callId: ctx.callId, result: null, error: error.message },
+        })
         return { callId: ctx.callId, result: `Error: ${error.message}`, isError: true }
       } finally {
         if (timer !== undefined) clearTimeout(timer)
@@ -104,11 +107,19 @@ export async function runAgentLoop(
   for (; callIndex < ABSOLUTE_MAX;) {
     const modelCtx = createModelContext(turnCtx, messages, modelId, toolDefs, callIndex)
 
-    turnCtx.emit({ type: "model:start", model: modelId, callIndex })
+    turnCtx.emit({ type: "model:start", payload: { model: modelId, callIndex } })
     const response = await modelOnion(modelCtx)
     callIndex++
 
-    turnCtx.emit({ type: "model:end", callIndex: callIndex - 1, finishReason: response.finishReason })
+    turnCtx.emit({
+      type: "model:end",
+      payload: {
+        callIndex: callIndex - 1,
+        text: response.text ?? "",
+        finishReason: response.finishReason,
+        ...(response.usage !== undefined && { usage: response.usage }),
+      },
+    })
 
     // If no tool calls → turn is complete (text may be empty if iteration limit reached)
     if (!response.toolCalls || response.toolCalls.length === 0) {
@@ -136,7 +147,10 @@ export async function runAgentLoop(
             return { callId: tc.toolCallId, result: `Tool not found: ${tc.toolName}`, isError: true }
           }
 
-          turnCtx.emit({ type: "tool:start", tool: tc.toolName, args: tc.args, callId: tc.toolCallId })
+          turnCtx.emit({
+            type: "tool:call",
+            payload: { tool: tc.toolName, args: tc.args, callId: tc.toolCallId },
+          })
           const toolCtx = createToolContext(turnCtx, toolDef, tc.args, tc.toolCallId, idx)
           return toolOnion(toolCtx)
         }),

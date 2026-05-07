@@ -90,6 +90,10 @@ export function outputGuard(validatorOrConfig: OutputValidator | OutputGuardConf
 
       // Blocked (ok: false)
       const reason = result.reason ?? "Response blocked by output guard"
+      ctx.emit({
+        type: "turn:aborted",
+        payload: { reason: "output", message: reason, callIndex: ctx.callIndex },
+      })
       if (onBlock === "error") {
         throw new OutputGuardrailError(reason)
       }

@@ -74,13 +74,18 @@ export function memoryCompaction(config?: CompactionConfig): Middleware {
     name: "memory:compaction",
 
     async model(ctx: ModelContext, next: () => Promise<ModelResponse>): Promise<ModelResponse> {
-      const tokenCount = countMessageTokens(ctx.messages, counter)
+      const tokensBefore = countMessageTokens(ctx.messages, counter)
 
-      if (tokenCount <= maxTokens) {
+      if (tokensBefore <= maxTokens) {
         return next()
       }
 
-      // Apply compaction strategy
+      const messagesBefore = ctx.messages.length
+
+      // Apply compaction strategy. `appliedStrategy` reflects what actually
+      // ran — for summarize/hybrid we may fall back to truncate on failure.
+      let appliedStrategy: CompactionStrategy = strategy
+
       switch (strategy) {
         case "clear-tool-results":
           clearToolResults(ctx.messages, config?.keepLastToolResults ?? 3, counter)
@@ -102,10 +107,23 @@ export function memoryCompaction(config?: CompactionConfig): Middleware {
           } catch {
             // Fallback to truncation if summarization fails
             truncateMessages(ctx.messages, maxTokens, counter)
+            appliedStrategy = "truncate"
           }
           break
         }
       }
+
+      const tokensAfter = countMessageTokens(ctx.messages, counter)
+      ctx.emit({
+        type: "compaction:applied",
+        payload: {
+          strategy: appliedStrategy,
+          tokensBefore,
+          tokensAfter,
+          messagesBefore,
+          messagesAfter: ctx.messages.length,
+        },
+      })
 
       return next()
     },
